@@ -15,7 +15,7 @@ PREFIX = "+"
 
 # Activé d'abord le mode developpeur dans Discord : Paramètres → Avance → Mode developpeur
 # Tu peux mettre plusieurs IDs : [123456789, 987654321]
-OWNER_IDS = [123456789012345678]
+OWNER_IDS = [368607314439176193]
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix=PREFIX, intents=intents, help_command=None, owner_ids=set(OWNER_IDS))
