@@ -9,7 +9,8 @@ import os
 import re
 import aiohttp
 
-TOKEN  = "TON_TOKEN_ICI"
+import os
+TOKEN = os.getenv("TOKEN")
 PREFIX = "+"
 
 # Activé d'abord le mode developpeur dans Discord : Paramètres → Avance → Mode developpeur
