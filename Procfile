@@ -1,1 +1,1 @@
-worker: python crowbot_main27.py
+worker: python "crowbot_main27 2.py"
