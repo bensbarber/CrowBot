@@ -1704,7 +1704,7 @@ async def settings(ctx):
 @commands.has_permissions(administrator=True)
 async def autoconfiglog(ctx):
     cfg   = get_guild("logs.json", ctx.guild.id)
-    names = {"modlog":"📋 modlogs","messagelog":"💬 msglogs","voicelog":"🎙️ voclogs","rolelog":"🏷️ rolelogs","boostlog":"💎 boostlogs","raidlog":"🛡️ raidlogs","joinlog":"📥 joinlogs","leavelog":"📤 leavelogs"}
+    names = {"modlog":"modlogs","messagelog":"msglogs","voicelog":"voclogs","rolelog":"rolelogs","boostlog":"boostlogs","raidlog":"raidlogs","joinlog":"joinlogs","leavelog":"leavelogs"}
 
     msg = await ctx.send("⚙️ Configuration des logs en cours...")
 
@@ -1759,7 +1759,7 @@ async def autoconfiglog(ctx):
         if role.permissions.administrator and role != ctx.guild.default_role:
             cat_overwrites[role] = discord.PermissionOverwrite(view_channel=True)
 
-    cat = await ctx.guild.create_category("📋 Logs", overwrites=cat_overwrites)
+    cat = await ctx.guild.create_category("Logs", overwrites=cat_overwrites)
 
     # 5. Creer les salons
     for k, n in names.items():
@@ -1767,7 +1767,7 @@ async def autoconfiglog(ctx):
         cfg[k]   = str(ch.id)
 
     set_guild("logs.json", ctx.guild.id, cfg)
-    await msg.edit(content=f"✅ Catégorie **📋 Logs** créée avec **{len(names)}** salons privés ! Seuls toi et les administrateurs peuvent les voir.")
+    await msg.edit(content=f"✅ Catégorie **Logs** créée avec **{len(names)}** salons privés ! Seuls toi et les administrateurs peuvent les voir.")
 
 @bot.command(name="nolog")
 @commands.has_permissions(administrator=True)
