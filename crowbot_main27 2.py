@@ -3569,8 +3569,8 @@ async def image_search(ctx, *, query: str):
 
 @bot.command(name="pocoyo")
 async def pocoyo_cmd(ctx):
-    e = discord.Embed(title="Pocoyos - Support", color=get_color(ctx.guild.id))
-    e.description = "Rejoins le serveur de support Pocoyos pour de l'aide !"
+    e = discord.Embed(title="Pocoyo - Support", color=get_color(ctx.guild.id))
+    e.description = "En cas d'erreur de commande ou problème, merci de contacter <@368607314439176193> afin qu'il puisse intervenir."
     await ctx.send(embed=e)
 
 @bot.command(name="changelogs")
