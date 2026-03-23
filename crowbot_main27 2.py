@@ -1183,38 +1183,23 @@ async def help_cmd(ctx):
 async def warn(ctx, member: discord.Member, *, reason="Aucune raison"):
     await add_sanction(ctx.guild.id, member.id, "warn", reason, ctx.author.id)
     count = len(get_member("sanctions.json", ctx.guild.id, member.id).get("list", []))
-    e = discord.Embed(title="Avertissement", color=0xffd700)
-    e.add_field(name="Membre", value=str(member)); e.add_field(name="Raison", value=reason); e.add_field(name="Total warns", value=str(count))
-    await ctx.send(embed=e)
+    await ctx.send(f"{member.mention} a recu un avertissement. Raison : {reason} ({count} warn(s) au total)")
     await log_mod(ctx.guild, "warn", member, ctx.author, reason)
-    try: await member.send(f"Tu as recu un avertissement sur **{ctx.guild.name}**.\nRaison : {reason}")
+    try: await member.send(f"Tu as recu un avertissement sur {ctx.guild.name}. Raison : {reason}")
     except: pass
 
-@bot.command(name="muté")
+@bot.command(name="mute")
 @commands.has_permissions(manage_roles=True)
 async def mute(ctx, member: discord.Member, *, reason="Aucune raison"):
     role = await get_mute_role(ctx.guild)
     await member.add_roles(role, reason=reason)
-    await add_sanction(ctx.guild.id, member.id, "muté", reason, ctx.author.id)
-    e = discord.Embed(title="Muté", color=0xff8c00)
-    e.add_field(name="Membre", value=str(member)); e.add_field(name="Raison", value=reason)
-    await ctx.send(embed=e)
-    await log_mod(ctx.guild, "muté", member, ctx.author, reason)
+    await add_sanction(ctx.guild.id, member.id, "mute", reason, ctx.author.id)
+    await ctx.send(f"{member.mention} a ete mute. Raison : {reason}")
+    await log_mod(ctx.guild, "mute", member, ctx.author, reason)
+    try: await member.send(f"Tu as ete mute sur {ctx.guild.name}. Raison : {reason}")
+    except: pass
 
-@bot.command(name="tempmute")
-@commands.has_permissions(manage_roles=True)
-async def tempmute(ctx, member: discord.Member, duration: str, *, reason="Aucune raison"):
-    delta = parse_dur(duration)
-    if not delta: return await ctx.send("Durée invalide. Ex: `10m`, `2h`, `1d`")
-    role = await get_mute_role(ctx.guild)
-    await member.add_roles(role, reason=reason)
-    await add_sanction(ctx.guild.id, member.id, "tempmute", f"{duration} - {reason}", ctx.author.id)
-    e = discord.Embed(title="Muté temporaire", color=0xff8c00)
-    e.add_field(name="Membre", value=str(member)); e.add_field(name="Durée", value=duration); e.add_field(name="Raison", value=reason)
-    await ctx.send(embed=e)
-    await log_mod(ctx.guild, "muté", member, ctx.author, f"{duration} - {reason}")
-    await asyncio.sleep(delta.total_seconds())
-    if role in member.roles: await member.remove_roles(role, reason="Fin du muté temporaire")
+
 
 @bot.command(name="unmute")
 @commands.has_permissions(manage_roles=True)
@@ -1223,9 +1208,9 @@ async def unmute(ctx, member: discord.Member):
     role = ctx.guild.get_role(int(rid)) if rid else discord.utils.get(ctx.guild.roles, name="Muted")
     if role and role in member.roles:
         await member.remove_roles(role)
-        await ctx.send(f"**{member}** a ete unmute.")
+        await ctx.send(f"{member.mention} a ete unmute.")
         await log_mod(ctx.guild, "unmute", member, ctx.author)
-    else: await ctx.send("Ce membre n'est pas muté.")
+    else: await ctx.send("Ce membre n'est pas mute.")
 
 @bot.command(name="cmute")
 @commands.has_permissions(manage_roles=True)
@@ -1286,9 +1271,7 @@ async def kick(ctx, member: discord.Member, *, reason="Aucune raison"):
     try: await member.send(f"Tu as ete expulsé de **{ctx.guild.name}**.\nRaison : {reason}")
     except: pass
     await member.kick(reason=reason)
-    e = discord.Embed(title="Kick", color=0xff4500)
-    e.add_field(name="Membre", value=str(member)); e.add_field(name="Raison", value=reason)
-    await ctx.send(embed=e)
+    await ctx.send(f"{member} a ete expulse. Raison : {reason}")
     await log_mod(ctx.guild, "kick", member, ctx.author, reason)
 
 @bot.command(name="ban")
@@ -1298,26 +1281,9 @@ async def ban(ctx, member: discord.Member, *, reason="Aucune raison"):
     try: await member.send(f"Tu as ete banni de **{ctx.guild.name}**.\nRaison : {reason}")
     except: pass
     await member.ban(reason=reason)
-    e = discord.Embed(title="Ban", color=0xff0000)
-    e.add_field(name="Membre", value=str(member)); e.add_field(name="Raison", value=reason)
-    await ctx.send(embed=e)
+    await ctx.send(f"{member} a ete banni. Raison : {reason}")
     await log_mod(ctx.guild, "ban", member, ctx.author, reason)
 
-@bot.command(name="tempban")
-@commands.has_permissions(ban_members=True)
-async def tempban(ctx, member: discord.Member, duration: str, *, reason="Aucune raison"):
-    delta = parse_dur(duration)
-    if not delta: return await ctx.send("Durée invalide. Ex: `10m`, `2h`, `1d`")
-    await add_sanction(ctx.guild.id, member.id, "tempban", f"{duration} - {reason}", ctx.author.id)
-    try: await member.send(f"Tu as ete banni temporairement ({duration}) de **{ctx.guild.name}**.\nRaison : {reason}")
-    except: pass
-    await member.ban(reason=reason)
-    e = discord.Embed(title="Ban temporaire", color=0xff0000)
-    e.add_field(name="Membre", value=str(member)); e.add_field(name="Durée", value=duration); e.add_field(name="Raison", value=reason)
-    await ctx.send(embed=e)
-    await log_mod(ctx.guild, "ban", member, ctx.author, f"{duration} - {reason}")
-    await asyncio.sleep(delta.total_seconds())
-    await ctx.guild.unban(member, reason="Fin du ban temporaire")
 
 @bot.command(name="unban")
 @commands.has_permissions(ban_members=True)
@@ -1326,8 +1292,7 @@ async def unban(ctx, *, member_str: str):
     target = next((b.user for b in bans if str(b.user.id) == member_str or str(b.user) == member_str), None)
     if not target: return await ctx.send("Membre introuvable dans les bans.")
     await ctx.guild.unban(target)
-    e = discord.Embed(title="Unban", color=0x00ff00); e.add_field(name="Membre", value=str(target))
-    await ctx.send(embed=e)
+    await ctx.send(f"{target} a ete debanni.")
 
 @bot.command(name="banlist")
 @commands.has_permissions(ban_members=True)
@@ -1353,7 +1318,7 @@ async def unbanall(ctx):
 async def clear(ctx, amount: int = 10, member: discord.Member = None):
     check   = (lambda m: member is None or m.author == member)
     deleted = await ctx.channel.purge(limit=amount, check=check)
-    msg = await ctx.send(f"**{len(deleted)}** message(s) supprime(s).")
+    msg = await ctx.send(f"{ctx.author.mention} a supprime {len(deleted)} message(s).")
     await asyncio.sleep(3); await msg.delete()
 
 @bot.command(name="sanctions")
@@ -1392,12 +1357,12 @@ async def clear_all_sanctions(ctx):
 @bot.command(name="addrole")
 @commands.has_permissions(manage_roles=True)
 async def addrole(ctx, member: discord.Member, role: discord.Role):
-    await member.add_roles(role); await ctx.send(f"Role **{role.name}** ajouté a **{member}**.")
+    await member.add_roles(role); await ctx.send(f"{member.mention} a recu le role **{role.name}**.")
 
 @bot.command(name="delrole")
 @commands.has_permissions(manage_roles=True)
 async def delrole(ctx, member: discord.Member, role: discord.Role):
-    await member.remove_roles(role); await ctx.send(f"Role **{role.name}** retiré de **{member}**.")
+    await member.remove_roles(role); await ctx.send(f"{member.mention} a perdu le role **{role.name}**.")
 
 @bot.command(name="derank")
 @commands.has_permissions(manage_roles=True)
@@ -1440,14 +1405,14 @@ async def unlockall(ctx):
 async def hide(ctx, channel: discord.TextChannel = None):
     channel = channel or ctx.channel
     await channel.set_permissions(ctx.guild.default_role, view_channel=False)
-    await ctx.send(f"**#{channel.name}** caché.")
+    await ctx.send(f"#{channel.name} est maintenant cache.")
 
 @bot.command(name="unhide")
 @commands.has_permissions(manage_channels=True)
 async def unhide(ctx, channel: discord.TextChannel = None):
     channel = channel or ctx.channel
     await channel.set_permissions(ctx.guild.default_role, view_channel=True)
-    await ctx.send(f"**#{channel.name}** visible.")
+    await ctx.send(f"#{channel.name} est maintenant visible.")
 
 @bot.command(name="hideall")
 @commands.has_permissions(administrator=True)
@@ -1485,7 +1450,7 @@ async def renew(ctx, channel: discord.TextChannel = None):
     name = channel.name; cat = channel.category; pos = channel.position; ow = channel.overwrites
     await channel.delete()
     new_ch = await ctx.guild.create_text_channel(name, category=cat, overwrites=ow)
-    await new_ch.edit(position=pos); await new_ch.send(f"Salon **#{name}** recree.")
+    await new_ch.edit(position=pos); await new_ch.send(f"{ctx.author.mention} a recree le salon #{name}.")
 
 @bot.command(name="modlog")
 @commands.has_permissions(administrator=True)
@@ -5370,20 +5335,12 @@ async def timeout_cmd(ctx, member: discord.Member, duration: str, *, reason: str
     if delta.total_seconds() > 28 * 86400:
         return await ctx.send("Duree maximum : **28 jours**.")
     try:
-        until = datetime.utcnow() + delta
+        until = discord.utils.utcnow() + delta
         await member.timeout(until, reason=reason)
         await add_sanction(ctx.guild.id, member.id, "timeout", f"{duration} - {reason}", ctx.author.id)
-        e = discord.Embed(title="Timeout", color=0xff8c00, timestamp=datetime.utcnow())
-        e.set_thumbnail(url=member.display_avatar.url)
-        e.add_field(name="Membre",  value=f"{member.mention} ({member.id})", inline=True)
-        e.add_field(name="Duree",   value=duration, inline=True)
-        e.add_field(name="Raison",  value=reason, inline=False)
-        e.add_field(name="Fin",     value=f"<t:{int(until.timestamp())}:R>", inline=True)
-        e.set_footer(text=f"Par {ctx.author}")
-        await ctx.send(embed=e)
+        await ctx.send(f"{member.mention} a ete mis en timeout pour {duration}. Raison : {reason} (fin <t:{int(until.timestamp())}:R>)")
         await log_mod(ctx.guild, "mute", member, ctx.author, f"Timeout {duration} - {reason}")
-        msg = f"Tu as recu un timeout de {duration} sur {ctx.guild.name}. Raison : {reason}"
-        try: await member.send(msg)
+        try: await member.send(f"Tu as recu un timeout de {duration} sur {ctx.guild.name}. Raison : {reason}")
         except: pass
     except discord.Forbidden:
         await ctx.send("Je n'ai pas la permission de timeout ce membre.")
@@ -5395,11 +5352,7 @@ async def timeout_cmd(ctx, member: discord.Member, duration: str, *, reason: str
 async def untimeout_cmd(ctx, member: discord.Member):
     try:
         await member.timeout(None)
-        e = discord.Embed(title="Timeout leve", color=0x00ff00, timestamp=datetime.utcnow())
-        e.set_thumbnail(url=member.display_avatar.url)
-        e.add_field(name="Membre", value=f"{member.mention} ({member.id})", inline=True)
-        e.set_footer(text=f"Par {ctx.author}")
-        await ctx.send(embed=e)
+        await ctx.send(f"{member.mention} n'est plus en timeout.")
     except discord.Forbidden:
         await ctx.send("Je n'ai pas la permission.")
     except Exception as ex:
@@ -5415,13 +5368,7 @@ async def softban(ctx, member: discord.Member, *, reason: str = "Aucune raison")
         except: pass
         await ctx.guild.ban(member, reason=f"Softban par {ctx.author} - {reason}", delete_message_days=7)
         await ctx.guild.unban(member, reason="Softban - unban automatique")
-        e = discord.Embed(title="Softban", color=0xff4500, timestamp=datetime.utcnow())
-        e.set_thumbnail(url=member.display_avatar.url)
-        e.add_field(name="Membre",   value=f"{member.mention} ({member.id})", inline=True)
-        e.add_field(name="Raison",   value=reason, inline=False)
-        e.add_field(name="Messages", value="Messages des 7 derniers jours supprimes", inline=False)
-        e.set_footer(text=f"Par {ctx.author} - Le membre peut revenir avec une invitation")
-        await ctx.send(embed=e)
+        await ctx.send(f"{member} a ete softbanni (messages supprimes, peut revenir). Raison : {reason}")
         await log_mod(ctx.guild, "ban", member, ctx.author, f"Softban - {reason}")
     except discord.Forbidden:
         await ctx.send("Je n'ai pas la permission de bannir ce membre.")
