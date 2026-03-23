@@ -4574,60 +4574,254 @@ def _color_name(r, g, b):
     if r > 120 and g > 120 and b > 120: return "Gris clair"
     return "Mixte"
 
-sticky_tasks = {}  # guild_id:channel_id -> last_sticky_msg_id
+# Caches sticky
+sticky_tasks   = {}  # key -> last sticky msg id
+sticky_counters = {} # key -> nb messages depuis dernier repost
+
+def get_sticky_cfg(guild_id, channel_id):
+    cfg    = get_guild("modconfig.json", guild_id)
+    stickies = cfg.get("sticky_messages", {})
+    return stickies.get(str(channel_id))
+
+def save_sticky(guild_id, channel_id, data):
+    cfg = get_guild("modconfig.json", guild_id)
+    stickies = cfg.get("sticky_messages", {})
+    if data is None:
+        stickies.pop(str(channel_id), None)
+    else:
+        stickies[str(channel_id)] = data
+    cfg["sticky_messages"] = stickies
+    set_guild("modconfig.json", guild_id, cfg)
+
+async def post_sticky(channel, guild_id):
+    data = get_sticky_cfg(guild_id, channel.id)
+    if not data: return
+    key = f"{guild_id}:{channel.id}"
+    # Supprimer l'ancien sticky
+    old_id = sticky_tasks.get(key)
+    if old_id:
+        try:
+            old_msg = await channel.fetch_message(old_id)
+            await old_msg.delete()
+        except: pass
+    # Reposte
+    await asyncio.sleep(0.3)
+    txt   = data.get("message", "")
+    color = data.get("color", 0x1a0a2e)
+    e     = discord.Embed(description=txt, color=color)
+    e.set_footer(text="📌 Message épinglé")
+    sent = await channel.send(embed=e)
+    sticky_tasks[key] = sent.id
+    sticky_counters[key] = 0
+    # Reinitialiser le timer si mode temps
+    if data.get("mode") == "time" and data.get("interval"):
+        task_key = f"sticky_timer_{key}"
+        existing = sticky_tasks.get(task_key)
+        if existing:
+            existing.cancel()
+        async def timer_loop():
+            while True:
+                await asyncio.sleep(data["interval"])
+                cfg_check = get_sticky_cfg(guild_id, channel.id)
+                if not cfg_check: break
+                await post_sticky(channel, guild_id)
+        t = asyncio.create_task(timer_loop())
+        sticky_tasks[task_key] = t
+
+@bot.event
+async def on_message_sticky(message):
+    if message.author.bot or not message.guild: return
+    data = get_sticky_cfg(message.guild.id, message.channel.id)
+    if not data: return
+    key  = f"{message.guild.id}:{message.channel.id}"
+    mode = data.get("mode", "message")
+
+    if mode == "message":
+        every = data.get("every", 1)
+        sticky_counters[key] = sticky_counters.get(key, 0) + 1
+        if sticky_counters[key] >= every:
+            await post_sticky(message.channel, message.guild.id)
 
 @bot.command(name="stickymsg")
 @commands.has_permissions(manage_messages=True)
 async def stickymsg(ctx, *, message: str = None):
-    cfg = get_guild("modconfig.json", ctx.guild.id)
-    sticky = cfg.get("sticky_messages", {})
+    data = get_sticky_cfg(ctx.guild.id, ctx.channel.id)
 
-    if not message or message.lower() in ("off", "remove", "stop"):
-        # Supprimer le sticky de ce salon
-        if str(ctx.channel.id) in sticky:
-            del sticky[str(ctx.channel.id)]
-            cfg["sticky_messages"] = sticky
-            set_guild("modconfig.json", ctx.guild.id, cfg)
-            sticky_tasks.pop(f"{ctx.guild.id}:{ctx.channel.id}", None)
-            return await ctx.send("✅ Message épinglé supprimé de ce salon.")
-        return await ctx.send("Aucun message épinglé dans ce salon.\nUsage : `+stickymsg <message>` ou `+stickymsg off` pour supprimer.")
+    # Supprimer
+    if message and message.lower() in ("off", "remove", "stop"):
+        if data:
+            save_sticky(ctx.guild.id, ctx.channel.id, None)
+            key = f"{ctx.guild.id}:{ctx.channel.id}"
+            sticky_tasks.pop(key, None)
+            t = sticky_tasks.pop(f"sticky_timer_{key}", None)
+            if t: t.cancel()
+            return await ctx.send(f"Message épinglé supprimé de {ctx.channel.mention}.")
+        return await ctx.send("Aucun message épinglé dans ce salon.")
 
-    sticky[str(ctx.channel.id)] = message
-    cfg["sticky_messages"] = sticky
-    set_guild("modconfig.json", ctx.guild.id, cfg)
+    # Sans argument : ouvre le panel si sticky existant
+    if not message:
+        if data:
+            e    = _sticky_embed(ctx.guild, ctx.channel, data)
+            view = StickySettingsView(ctx.guild.id, ctx.channel)
+            msg  = await ctx.send(embed=e, view=view)
+            view.message = msg
+        else:
+            await ctx.send("Usage : `+stickymsg <message>` pour créer un message épinglé, ou `+stickymsg off` pour supprimer.")
+        return
 
-    e = discord.Embed(description=message, color=get_color(ctx.guild.id))
-    e.set_footer(text="📌 Message épinglé")
-    sent = await ctx.send(embed=e)
-    sticky_tasks[f"{ctx.guild.id}:{ctx.channel.id}"] = sent.id
+    # Créer ou mettre a jour le sticky
+    new_data = {
+        "message":  message,
+        "mode":     "message",
+        "every":    1,
+        "interval": None,
+        "color":    get_color(ctx.guild.id),
+    }
+    save_sticky(ctx.guild.id, ctx.channel.id, new_data)
+    await post_sticky(ctx.channel, ctx.guild.id)
     try: await ctx.message.delete()
     except: pass
-    await ctx.send(f"✅ Message épinglé actif dans {ctx.channel.mention} !", delete_after=5)
 
-@bot.event
-async def on_message_sticky(message):
-    """Reposte le sticky message apres chaque nouveau message."""
-    if message.author.bot or not message.guild: return
-    cfg    = get_guild("modconfig.json", message.guild.id)
-    sticky = cfg.get("sticky_messages", {})
-    key    = f"{message.guild.id}:{message.channel.id}"
-    txt    = sticky.get(str(message.channel.id))
-    if not txt: return
-    # Supprimé l'ancien sticky
-    old_id = sticky_tasks.get(key)
-    if old_id:
+    e    = _sticky_embed(ctx.guild, ctx.channel, new_data)
+    view = StickySettingsView(ctx.guild.id, ctx.channel)
+    msg  = await ctx.send(embed=e, view=view)
+    view.message = msg
+
+
+
+def _sticky_embed(guild, channel, data):
+    mode  = data.get("mode", "message")
+    every = data.get("every", 1)
+    inter = data.get("interval")
+    e = discord.Embed(title=f"📌 Sticky — #{channel.name}", color=get_color(guild.id))
+    e.add_field(name="💬 Message", value=data.get("message","?")[:100], inline=False)
+    if mode == "message":
+        e.add_field(name="⚙️ Mode",    value="Après X messages", inline=True)
+        e.add_field(name="🔢 Tous les", value=f"{every} message(s)", inline=True)
+    else:
+        seconds = inter or 0
+        if seconds >= 86400:
+            label = f"{seconds//86400}j"
+        elif seconds >= 3600:
+            label = f"{seconds//3600}h"
+        else:
+            label = f"{seconds//60}min"
+        e.add_field(name="⚙️ Mode",      value="Intervalle de temps", inline=True)
+        e.add_field(name="⏱️ Toutes les", value=label, inline=True)
+    e.set_footer(text="Utilise les boutons pour modifier")
+    return e
+
+class StickySettingsView(discord.ui.View):
+    def __init__(self, guild_id, channel):
+        super().__init__(timeout=120)
+        self.guild_id = guild_id
+        self.channel  = channel
+        self.message  = None
+
+    async def refresh(self, interaction):
+        data = get_sticky_cfg(self.guild_id, self.channel.id)
+        if not data:
+            return await interaction.response.edit_message(content="Sticky supprimé.", view=None)
+        e = _sticky_embed(interaction.guild, self.channel, data)
+        await interaction.response.edit_message(embed=e, view=self)
+
+    @discord.ui.button(label="🔢 Après X messages", style=discord.ButtonStyle.primary, custom_id="sticky_msg_mode")
+    async def set_msg_mode(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(StickyMessageModeModal(self.guild_id, self.channel, self))
+
+    @discord.ui.button(label="⏱️ Intervalle de temps", style=discord.ButtonStyle.primary, custom_id="sticky_time_mode")
+    async def set_time_mode(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(StickyTimeModeModal(self.guild_id, self.channel, self))
+
+    @discord.ui.button(label="✏️ Modifier le message", style=discord.ButtonStyle.secondary, custom_id="sticky_edit_msg")
+    async def edit_message(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(StickyEditMsgModal(self.guild_id, self.channel, self))
+
+    @discord.ui.button(label="🗑️ Supprimer", style=discord.ButtonStyle.danger, custom_id="sticky_delete")
+    async def delete_sticky(self, interaction: discord.Interaction, button: discord.ui.Button):
+        save_sticky(self.guild_id, self.channel.id, None)
+        key = f"{self.guild_id}:{self.channel.id}"
+        sticky_tasks.pop(key, None)
+        t = sticky_tasks.pop(f"sticky_timer_{key}", None)
+        if t: t.cancel()
+        await interaction.response.edit_message(content=f"Message épinglé supprimé de {self.channel.mention}.", embed=None, view=None)
+        self.stop()
+
+    async def on_timeout(self):
         try:
-            old_msg = await message.channel.fetch_message(old_id)
-            await old_msg.delete()
+            for item in self.children: item.disabled = True
+            if self.message: await self.message.edit(view=self)
         except: pass
-    # Reposte
-    await asyncio.sleep(0.5)
-    e    = discord.Embed(description=txt, color=get_color(message.guild.id))
-    e.set_footer(text="📌 Message épinglé")
-    sent = await message.channel.send(embed=e)
-    sticky_tasks[key] = sent.id
 
-# Integre on_message_sticky dans le on_message principal (appel manuel)
+class StickyMessageModeModal(discord.ui.Modal, title="Après X messages"):
+    every = discord.ui.TextInput(label="Reposte après combien de messages ?", placeholder="Ex: 5 (reposte tous les 5 messages)", max_length=4)
+    def __init__(self, guild_id, channel, parent):
+        super().__init__()
+        self.guild_id = guild_id; self.channel = channel; self.parent = parent
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            n    = max(1, int(str(self.every)))
+            data = get_sticky_cfg(self.guild_id, self.channel.id)
+            if not data: return
+            data["mode"]  = "message"
+            data["every"] = n
+            save_sticky(self.guild_id, self.channel.id, data)
+            # Annuler timer si existait
+            t = sticky_tasks.pop(f"sticky_timer_{self.guild_id}:{self.channel.id}", None)
+            if t: t.cancel()
+            await self.parent.refresh(interaction)
+        except:
+            await interaction.response.send_message("Valeur invalide.", ephemeral=True)
+
+class StickyTimeModeModal(discord.ui.Modal, title="Intervalle de temps"):
+    jours    = discord.ui.TextInput(label="Jours",    placeholder="0", max_length=3, required=False, default="0")
+    heures   = discord.ui.TextInput(label="Heures",   placeholder="0", max_length=3, required=False, default="0")
+    minutes  = discord.ui.TextInput(label="Minutes",  placeholder="10", max_length=3, required=False, default="10")
+    def __init__(self, guild_id, channel, parent):
+        super().__init__()
+        self.guild_id = guild_id; self.channel = channel; self.parent = parent
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            j = int(str(self.jours)   or "0")
+            h = int(str(self.heures)  or "0")
+            m = int(str(self.minutes) or "10")
+            seconds = j*86400 + h*3600 + m*60
+            if seconds < 60:
+                return await interaction.response.send_message("Minimum 1 minute.", ephemeral=True)
+            data = get_sticky_cfg(self.guild_id, self.channel.id)
+            if not data: return
+            data["mode"]     = "time"
+            data["interval"] = seconds
+            save_sticky(self.guild_id, self.channel.id, data)
+            # Lancer le timer
+            key = f"{self.guild_id}:{self.channel.id}"
+            t   = sticky_tasks.pop(f"sticky_timer_{key}", None)
+            if t: t.cancel()
+            channel = self.channel
+            guild_id = self.guild_id
+            async def timer_loop():
+                while True:
+                    await asyncio.sleep(seconds)
+                    cfg_check = get_sticky_cfg(guild_id, channel.id)
+                    if not cfg_check or cfg_check.get("mode") != "time": break
+                    await post_sticky(channel, guild_id)
+            sticky_tasks[f"sticky_timer_{key}"] = asyncio.create_task(timer_loop())
+            await self.parent.refresh(interaction)
+        except:
+            await interaction.response.send_message("Valeur invalide.", ephemeral=True)
+
+class StickyEditMsgModal(discord.ui.Modal, title="Modifier le message"):
+    new_msg = discord.ui.TextInput(label="Nouveau message", style=discord.TextStyle.paragraph, max_length=2000)
+    def __init__(self, guild_id, channel, parent):
+        super().__init__()
+        self.guild_id = guild_id; self.channel = channel; self.parent = parent
+    async def on_submit(self, interaction: discord.Interaction):
+        data = get_sticky_cfg(self.guild_id, self.channel.id)
+        if not data: return
+        data["message"] = str(self.new_msg)
+        save_sticky(self.guild_id, self.channel.id, data)
+        await post_sticky(self.channel, self.guild_id)
+        await self.parent.refresh(interaction)
 
 @bot.command(name="automod")
 @commands.has_permissions(administrator=True)
