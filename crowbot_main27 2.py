@@ -58,14 +58,16 @@ join_cache  = defaultdict(list)
 snipe_cache = {}
 
 async def send_log(guild, log_type, embed):
-    cfg    = get_guild("logs.json", guild.id)
-    cid    = cfg.get(log_type)
-    nologs = cfg.get("nolog", [])
-    if not cid: return
-    ch = guild.get_channel(int(cid))
-    if ch and str(ch.id) not in nologs:
-        try: await ch.send(embed=embed)
-        except: pass
+    try:
+        cfg    = get_guild("logs.json", guild.id)
+        cid    = cfg.get(log_type)
+        nologs = cfg.get("nolog", [])
+        if not cid: return
+        ch = guild.get_channel(int(cid))
+        if ch and str(ch.id) not in nologs:
+            await ch.send(embed=embed)
+    except Exception as ex:
+        print(f"[send_log] Erreur ({log_type}): {ex}")
 
 async def add_sanction(gid, mid, stype, reason, mod):
     s = get_member("sanctions.json", gid, mid)
@@ -149,7 +151,10 @@ async def log_mod(guild, action, member, mod, reason="Aucune raison", extra=None
     except: pass
 
     e.set_footer(text=f"ID membre : {member.id} • ID modérateur : {mod.id}")
-    await send_log(guild, log_type, e)
+    try:
+        await send_log(guild, log_type, e)
+    except Exception as ex:
+        print(f"[log_mod] Erreur ({action}): {ex}")
 
 
 async def get_mute_role(guild):
@@ -164,15 +169,36 @@ async def get_mute_role(guild):
             except: pass
     return r
 
-async def do_punish(guild, member, ptype, reason):
+async def do_punish(guild, member, ptype, reason, cfg=None):
+    """
+    ptype: delete | warn | mute | kick | ban | derank | timeout
+    Si ptype == "timeout", cfg doit contenir "timeout_duration" en secondes.
+    """
     try:
-        if ptype == "kick": await member.kick(reason=reason)
-        elif ptype == "ban": await member.ban(reason=reason)
-        elif ptype == "muté":
+        if ptype == "delete":
+            pass  # Le message est déjà supprimé avant l'appel
+        elif ptype == "warn":
+            await add_sanction(guild.id, member.id, "warn", reason, "AutoMod")
+        elif ptype == "kick":
+            await member.kick(reason=reason)
+        elif ptype == "ban":
+            await member.ban(reason=reason)
+        elif ptype in ("mute", "muté"):
             r = await get_mute_role(guild)
             await member.add_roles(r, reason=reason)
-        await add_sanction(guild.id, member.id, ptype, reason, "AutoMod")
-    except: pass
+        elif ptype == "derank":
+            roles = [r for r in member.roles if r != guild.default_role and r.position < guild.me.top_role.position]
+            await member.remove_roles(*roles, reason=reason)
+        elif ptype == "timeout":
+            duration = 600  # 10 min par defaut
+            if cfg:
+                duration = cfg.get("automod_timeout_duration", 600)
+            until = discord.utils.utcnow() + __import__("datetime").timedelta(seconds=duration)
+            await member.timeout(until, reason=reason)
+        if ptype not in ("delete",):
+            await add_sanction(guild.id, member.id, ptype, reason, "AutoMod")
+    except Exception as ex:
+        print(f"[do_punish] Erreur ({ptype}): {ex}")
 
 @bot.event
 async def on_ready():
@@ -427,8 +453,10 @@ async def on_message(message):
             spam_cache[message.guild.id][message.author.id] = [t for t in caché if now - t < window]
             if len(spam_cache[message.guild.id][message.author.id]) >= limit:
                 spam_cache[message.guild.id][message.author.id] = []
-                await do_punish(message.guild, message.author, cfg.get("punish_antispam","muté"), "Spam détecté")
-                e = discord.Embed(title="Antiraid - Antispam", description=f"{message.author.mention} sanctionné pour spam.", color=0xff4500, timestamp=datetime.utcnow())
+                try: await message.delete()
+                except: pass
+                await do_punish(message.guild, message.author, cfg.get("punish_antispam","mute"), "Spam détecté", cfg)
+                e = discord.Embed(title="🔨 Automod - Antispam", description=f"{message.author.mention} sanctionné pour spam. Sanction : **{cfg.get('punish_antispam','mute')}**", color=0xff4500, timestamp=datetime.utcnow())
                 await send_log(message.guild, "raidlog", e)
         if cfg.get("antilink"):
             mode = cfg.get("antilink_mode","all"); c = message.content.lower()
@@ -437,7 +465,7 @@ async def on_message(message):
             if (mode=="invite" and inv) or (mode=="all" and (inv or lnk)):
                 try: await message.delete()
                 except: pass
-                await do_punish(message.guild, message.author, cfg.get("punish_antilink","warn"), "Lien interdit")
+                await do_punish(message.guild, message.author, cfg.get("punish_antilink","warn"), "Lien interdit", cfg)
                 e = discord.Embed(title="Antiraid - Antilink", description=f"{message.author.mention} : lien supprimé.", color=0xff4500, timestamp=datetime.utcnow())
                 await send_log(message.guild, "raidlog", e)
         if cfg.get("badwords"):
@@ -450,13 +478,13 @@ async def on_message(message):
         if cfg.get("antimassmention") and len(message.mentions) >= cfg.get("antimassmention_limit",5):
             try: await message.delete()
             except: pass
-            await do_punish(message.guild, message.author, cfg.get("punish_antimassmention","muté"), "Spam de mentions")
+            await do_punish(message.guild, message.author, cfg.get("punish_antimassmention","mute"), "Spam de mentions", cfg)
             e = discord.Embed(title="Antiraid - Antimassmention", description=f"{message.author.mention} : spam mentions.", color=0xff4500, timestamp=datetime.utcnow())
             await send_log(message.guild, "raidlog", e)
         if cfg.get("antieveryone") and cfg.get("antieveryone") != "off" and message.mention_everyone:
             try: await message.delete()
             except: pass
-            await do_punish(message.guild, message.author, cfg.get("punish_antieveryone","warn"), "@everyone interdit")
+            await do_punish(message.guild, message.author, cfg.get("punish_antieveryone","warn"), "@everyone interdit", cfg)
             e = discord.Embed(title="Antiraid - Antieveryone", description=f"{message.author.mention} : @everyone supprimé.", color=0xff4500, timestamp=datetime.utcnow())
             await send_log(message.guild, "raidlog", e)
     mcfg    = get_guild("modconfig.json", message.guild.id)
@@ -614,7 +642,7 @@ async def on_member_join(member):
     if new_acct:
         e.add_field(name="⚠️ Compte recent", value="Ce compte a moins de 7 jours !", inline=False)
     e.set_footer(text=f"ID : {member.id}")
-    await send_log(member.guild, "modlog", e)
+    await send_log(member.guild, "joinlog", e)
     lcfg = get_guild("logs.json", member.guild.id)
     cid  = lcfg.get("joinlog")
     if cid:
@@ -671,7 +699,7 @@ async def on_member_remove(member):
     e.add_field(name="👥 Membres",   value=str(member.guild.member_count), inline=True)
     if roles: e.add_field(name=f"🏷️ Roles ({len(roles)})", value=" ".join(roles[:10]), inline=False)
     e.set_footer(text=f"ID : {member.id}")
-    await send_log(member.guild, "modlog", e)
+    await send_log(member.guild, "joinlog", e)
     lcfg = get_guild("logs.json", member.guild.id)
     cid  = lcfg.get("leavelog")
     if cid:
@@ -4933,6 +4961,37 @@ class StickyTimeModeModal(discord.ui.Modal, title="Intervalle de temps"):
         except:
             await interaction.response.send_message("Valeur invalide.", ephemeral=True)
 
+
+class AutomodTimeoutDurationModal(discord.ui.Modal, title="Durée du timeout"):
+    jours   = discord.ui.TextInput(label="Jours",   placeholder="0", max_length=2, required=False, default="0")
+    heures  = discord.ui.TextInput(label="Heures",  placeholder="0", max_length=2, required=False, default="0")
+    minutes = discord.ui.TextInput(label="Minutes", placeholder="10", max_length=3, required=False, default="10")
+
+    def __init__(self, guild_id, punish_key, parent):
+        super().__init__()
+        self.guild_id   = guild_id
+        self.punish_key = punish_key
+        self.parent     = parent
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            j = int(str(self.jours)   or "0")
+            h = int(str(self.heures)  or "0")
+            m = int(str(self.minutes) or "10")
+            seconds = j*86400 + h*3600 + m*60
+            if seconds < 60:
+                return await interaction.response.send_message("Minimum 1 minute.", ephemeral=True)
+            cfg = get_guild("antiraid.json", self.guild_id)
+            cfg["automod_timeout_duration"] = seconds
+            set_guild("antiraid.json", self.guild_id, cfg)
+            label = f"{j}j " if j else ""
+            label += f"{h}h " if h else ""
+            label += f"{m}min" if m else ""
+            await interaction.response.send_message(f"✅ Timeout défini : **{label.strip()}**", ephemeral=True)
+            await self.parent._refresh(interaction) if hasattr(self.parent, '_refresh') else None
+        except:
+            await interaction.response.send_message("Valeur invalide.", ephemeral=True)
+
 @bot.command(name="automod")
 @commands.has_permissions(administrator=True)
 async def automod_settings(ctx):
@@ -4947,9 +5006,13 @@ def _automod_embed(guild, cfg):
 
     # Antispam
     spam_on = cfg.get("antispam", False)
+    punish_spam = cfg.get("punish_antispam","mute")
+    td_seconds  = cfg.get("automod_timeout_duration", 600)
+    td_label    = f"{td_seconds//3600}h{(td_seconds%3600)//60}min" if td_seconds >= 3600 else f"{td_seconds//60}min"
+    timeout_str = f" ({td_label})" if punish_spam == "timeout" else ""
     e.add_field(
         name="💬 Antispam",
-        value=f"{'✅ Actif' if spam_on else '❌ Inactif'}\nLimite : `{cfg.get('antispam_limit',5)}` msgs / `{cfg.get('antispam_window',5)}s`\nPunition : `{cfg.get('punish_antispam','muté')}`",
+        value=f"{'✅ Actif' if spam_on else '❌ Inactif'}\nLimite : `{cfg.get('antispam_limit',5)}` msgs / `{cfg.get('antispam_window',5)}s`\nPunition : `{punish_spam}{timeout_str}`",
         inline=True
     )
     # Antilink
@@ -5044,6 +5107,7 @@ class AutomodView(discord.ui.View):
                 discord.SelectOption(label="Punition antilink",         emoji="⚠️", value="punish_antilink"),
                 discord.SelectOption(label="Punition mentions",         emoji="⚠️", value="punish_antimassmention"),
                 discord.SelectOption(label="Punition @everyone",        emoji="⚠️", value="punish_antieveryone"),
+                discord.SelectOption(label="Durée timeout automod",     emoji="⏱️", value="set_timeout_duration"),
             ],
             custom_id="am_settings"
         )
@@ -5099,19 +5163,25 @@ class AutomodView(discord.ui.View):
             sel = discord.ui.Select(
                 placeholder="Choisir la punition",
                 options=[
-                    discord.SelectOption(label="Warn",    emoji="⚠️", value="warn"),
-                    discord.SelectOption(label="Muté",    emoji="🔇", value="muté"),
-                    discord.SelectOption(label="Kick",    emoji="👢", value="kick"),
-                    discord.SelectOption(label="Ban",     emoji="🔨", value="ban"),
-                    discord.SelectOption(label="Tempban", emoji="⏱️", value="tempban"),
+                    discord.SelectOption(label="Supprimer le message", emoji="🗑️", value="delete",   description="Supprime seulement le message"),
+                    discord.SelectOption(label="Warn",                 emoji="⚠️", value="warn",    description="Avertissement"),
+                    discord.SelectOption(label="Timeout",              emoji="⏱️", value="timeout", description="Timeout configurable"),
+                    discord.SelectOption(label="Mute",                 emoji="🔇", value="mute",    description="Ajoute le rôle muet"),
+                    discord.SelectOption(label="Kick",                 emoji="👢", value="kick",    description="Expulse le membre"),
+                    discord.SelectOption(label="Ban",                  emoji="🔨", value="ban",     description="Bannit le membre"),
                 ]
             )
             parent = self
+            pkey = key
             async def punish_cb(inter):
-                cfg2 = get_guild("antiraid.json", self.guild.id)
-                cfg2[key] = inter.data["values"][0]
+                chosen = inter.data["values"][0]
+                cfg2   = get_guild("antiraid.json", self.guild.id)
+                cfg2[pkey] = chosen
                 set_guild("antiraid.json", self.guild.id, cfg2)
-                await parent._refresh(inter)
+                if chosen == "timeout":
+                    await inter.response.send_modal(AutomodTimeoutDurationModal(self.guild.id, pkey, parent))
+                else:
+                    await parent._refresh(inter)
             sel.callback = punish_cb
             v = discord.ui.View(timeout=60); v.add_item(sel)
             return await interaction.response.edit_message(view=v)
@@ -5136,9 +5206,10 @@ class AutomodView(discord.ui.View):
 
         # Modals pour les valeurs numeriques
         modals = {
-            "set_spam_limit":     AutomodNumberModal("Limite antispam", "antispam_limit",    "Nombre de messages avant sanction (ex: 5)", self),
-            "set_mention_limit":  AutomodNumberModal("Limite mentions",  "antimassmention_limit", "Nombre de mentions avant sanction (ex: 5)",  self),
-            "set_creation_limit": AutomodNumberModal("Age minimum (secondes)", "creation_limit", "Ex: 604800 = 7 jours",                       self),
+            "set_spam_limit":       AutomodNumberModal("Limite antispam", "antispam_limit",    "Nombre de messages avant sanction (ex: 5)", self),
+            "set_mention_limit":    AutomodNumberModal("Limite mentions",  "antimassmention_limit", "Nombre de mentions avant sanction (ex: 5)", self),
+            "set_creation_limit":   AutomodNumberModal("Age minimum (secondes)", "creation_limit", "Ex: 604800 = 7 jours", self),
+            "set_timeout_duration": AutomodTimeoutDurationModal(self.guild.id, "automod_timeout_duration", self),
         }
         if val in modals:
             return await interaction.response.send_modal(modals[val])
@@ -5338,9 +5409,27 @@ async def on_guild_channel_delete_antiraid(channel):
     try:
         async for entry in channel.guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_delete):
             if (datetime.utcnow() - entry.created_at.replace(tzinfo=None)).total_seconds() < 3:
-                await _ar_check(channel.guild, entry.user, "anti_delete_channel",
+                sanctionne = await _ar_check(channel.guild, entry.user, "anti_delete_channel",
                     "anti_delete_channel_limit", "anti_delete_channel_window",
                     "punish_anti_delete_channel", "Suppression de salons")
+                if sanctionne:
+                    # Recreer le salon dans la meme categorie avec les memes permissions
+                    try:
+                        new_ch = await channel.guild.create_text_channel(
+                            channel.name,
+                            category=channel.category,
+                            overwrites=channel.overwrites,
+                            topic=channel.topic if hasattr(channel, "topic") else None,
+                            position=channel.position,
+                        )
+                        e = discord.Embed(title="♻️ Salon recréé automatiquement", color=0x00ff00, timestamp=datetime.utcnow())
+                        e.add_field(name="📌 Salon", value=f"#{new_ch.name}", inline=True)
+                        e.add_field(name="📁 Catégorie", value=channel.category.name if channel.category else "Aucune", inline=True)
+                        e.add_field(name="🛡️ Raison", value="Anti-delete channel déclenché", inline=False)
+                        await new_ch.send(embed=e)
+                        await send_log(channel.guild, "raidlog", e)
+                    except Exception as ex:
+                        print(f"[anti_delete_channel] Erreur recreation: {ex}")
     except: pass
 
 @bot.event
@@ -5350,9 +5439,19 @@ async def on_guild_channel_create_antiraid(channel):
     try:
         async for entry in channel.guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_create):
             if (datetime.utcnow() - entry.created_at.replace(tzinfo=None)).total_seconds() < 3:
-                await _ar_check(channel.guild, entry.user, "anti_create_channel",
+                sanctionne = await _ar_check(channel.guild, entry.user, "anti_create_channel",
                     "anti_create_channel_limit", "anti_create_channel_window",
                     "punish_anti_create_channel", "Création de salons")
+                if sanctionne:
+                    # Supprimer le salon créé
+                    try:
+                        await channel.delete(reason="Anti-create channel déclenché")
+                        e = discord.Embed(title="🗑️ Salon supprimé automatiquement", color=0xff4500, timestamp=datetime.utcnow())
+                        e.add_field(name="📌 Salon", value=f"#{channel.name}", inline=True)
+                        e.add_field(name="🛡️ Raison", value="Anti-create channel déclenché", inline=False)
+                        await send_log(channel.guild, "raidlog", e)
+                    except Exception as ex:
+                        print(f"[anti_create_channel] Erreur suppression: {ex}")
     except: pass
 
 @bot.event
@@ -5362,21 +5461,67 @@ async def on_guild_channel_update_antiraid(before, after):
     try:
         async for entry in after.guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_update):
             if (datetime.utcnow() - entry.created_at.replace(tzinfo=None)).total_seconds() < 3:
-                await _ar_check(after.guild, entry.user, "anti_manage_channel",
+                sanctionne = await _ar_check(after.guild, entry.user, "anti_manage_channel",
                     "anti_manage_channel_limit", "anti_manage_channel_window",
                     "punish_anti_manage_channel", "Modification de salons")
+                if sanctionne:
+                    # Revenir aux parametres d'avant
+                    try:
+                        edit_kwargs = {}
+                        if before.name != after.name:
+                            edit_kwargs["name"] = before.name
+                        if hasattr(before, "topic") and before.topic != after.topic:
+                            edit_kwargs["topic"] = before.topic
+                        if hasattr(before, "slowmode_delay") and before.slowmode_delay != after.slowmode_delay:
+                            edit_kwargs["slowmode_delay"] = before.slowmode_delay
+                        if hasattr(before, "nsfw") and before.nsfw != after.nsfw:
+                            edit_kwargs["nsfw"] = before.nsfw
+                        if edit_kwargs:
+                            await after.edit(**edit_kwargs, reason="Anti-manage channel — modifications annulées")
+                        e = discord.Embed(title="↩️ Modifications annulées", color=0xff8c00, timestamp=datetime.utcnow())
+                        e.add_field(name="📌 Salon", value=after.mention, inline=True)
+                        e.add_field(name="🛡️ Raison", value="Anti-manage channel déclenché", inline=False)
+                        await send_log(after.guild, "raidlog", e)
+                    except Exception as ex:
+                        print(f"[anti_manage_channel] Erreur revert: {ex}")
     except: pass
 
 @bot.event
 async def on_guild_role_delete_antiraid(role):
+    # Sauvegarder les infos du role AVANT suppression
+    role_backup = {
+        "name":        role.name,
+        "color":       role.color.value,
+        "permissions": role.permissions.value,
+        "hoist":       role.hoist,
+        "mentionable": role.mentionable,
+        "position":    role.position,
+    }
     cfg = get_guild("antiraid.json", role.guild.id)
     if not cfg.get("anti_delete_role"): return
     try:
         async for entry in role.guild.audit_logs(limit=1, action=discord.AuditLogAction.role_delete):
             if (datetime.utcnow() - entry.created_at.replace(tzinfo=None)).total_seconds() < 3:
-                await _ar_check(role.guild, entry.user, "anti_delete_role",
+                sanctionne = await _ar_check(role.guild, entry.user, "anti_delete_role",
                     "anti_delete_role_limit", "anti_delete_role_window",
                     "punish_anti_delete_role", "Suppression de roles")
+                if sanctionne:
+                    # Recreer le role avec ses anciennes proprietes
+                    try:
+                        new_role = await role.guild.create_role(
+                            name=role_backup["name"],
+                            color=discord.Color(role_backup["color"]),
+                            permissions=discord.Permissions(role_backup["permissions"]),
+                            hoist=role_backup["hoist"],
+                            mentionable=role_backup["mentionable"],
+                            reason="Anti-delete role — rôle recréé automatiquement"
+                        )
+                        e = discord.Embed(title="♻️ Rôle recréé automatiquement", color=0x00ff00, timestamp=datetime.utcnow())
+                        e.add_field(name="🏷️ Rôle", value=new_role.mention, inline=True)
+                        e.add_field(name="🛡️ Raison", value="Anti-delete role déclenché", inline=False)
+                        await send_log(role.guild, "raidlog", e)
+                    except Exception as ex:
+                        print(f"[anti_delete_role] Erreur recreation: {ex}")
     except: pass
 
 @bot.event
@@ -5386,9 +5531,31 @@ async def on_guild_role_update_antiraid(before, after):
     try:
         async for entry in after.guild.audit_logs(limit=1, action=discord.AuditLogAction.role_update):
             if (datetime.utcnow() - entry.created_at.replace(tzinfo=None)).total_seconds() < 3:
-                await _ar_check(after.guild, entry.user, "anti_manage_role",
+                sanctionne = await _ar_check(after.guild, entry.user, "anti_manage_role",
                     "anti_manage_role_limit", "anti_manage_role_window",
                     "punish_anti_manage_role", "Modification de roles")
+                if sanctionne:
+                    # Revenir aux proprietes d'avant
+                    try:
+                        edit_kwargs = {}
+                        if before.name != after.name:
+                            edit_kwargs["name"] = before.name
+                        if before.color != after.color:
+                            edit_kwargs["color"] = before.color
+                        if before.permissions != after.permissions:
+                            edit_kwargs["permissions"] = before.permissions
+                        if before.hoist != after.hoist:
+                            edit_kwargs["hoist"] = before.hoist
+                        if before.mentionable != after.mentionable:
+                            edit_kwargs["mentionable"] = before.mentionable
+                        if edit_kwargs:
+                            await after.edit(**edit_kwargs, reason="Anti-manage role — modifications annulées")
+                        e = discord.Embed(title="↩️ Modifications rôle annulées", color=0xff8c00, timestamp=datetime.utcnow())
+                        e.add_field(name="🏷️ Rôle", value=after.mention, inline=True)
+                        e.add_field(name="🛡️ Raison", value="Anti-manage role déclenché", inline=False)
+                        await send_log(after.guild, "raidlog", e)
+                    except Exception as ex:
+                        print(f"[anti_manage_role] Erreur revert: {ex}")
     except: pass
 
 @bot.event
@@ -5397,7 +5564,6 @@ async def on_member_update_antirank(before, after):
     if not cfg.get("anti_rank"): return
     added = [r for r in after.roles if r not in before.roles]
     if not added: return
-    # Verifie si le role ajouté est dangereux
     dangerous_perms = ["administrator","manage_guild","ban_members","kick_members","manage_roles","manage_channels","mention_everyone"]
     dangerous = any(
         any(getattr(r.permissions, p, False) for p in dangerous_perms)
@@ -5407,9 +5573,19 @@ async def on_member_update_antirank(before, after):
     try:
         async for entry in before.guild.audit_logs(limit=1, action=discord.AuditLogAction.member_role_update):
             if (datetime.utcnow() - entry.created_at.replace(tzinfo=None)).total_seconds() < 3:
-                await _ar_check(before.guild, entry.user, "anti_rank",
+                sanctionne = await _ar_check(before.guild, entry.user, "anti_rank",
                     "anti_rank_limit", "anti_rank_window",
                     "punish_anti_rank", "Attribution de roles dangereux")
+                if sanctionne:
+                    # Retirer les roles dangereux attribués
+                    try:
+                        await after.remove_roles(*added, reason="Anti-rank — rôles dangereux retirés")
+                        e = discord.Embed(title="↩️ Rôles dangereux retirés", color=0xff0000, timestamp=datetime.utcnow())
+                        e.add_field(name="👤 Membre", value=after.mention, inline=True)
+                        e.add_field(name="🏷️ Rôles retirés", value=" ".join(r.mention for r in added), inline=True)
+                        await send_log(before.guild, "raidlog", e)
+                    except Exception as ex:
+                        print(f"[anti_rank] Erreur retrait roles: {ex}")
     except: pass
 
 @bot.event
@@ -5419,9 +5595,26 @@ async def on_guild_update_antiraid(before, after):
     try:
         async for entry in after.audit_logs(limit=1, action=discord.AuditLogAction.guild_update):
             if (datetime.utcnow() - entry.created_at.replace(tzinfo=None)).total_seconds() < 3:
-                await _ar_check(after, entry.user, "anti_manage_server",
+                sanctionne = await _ar_check(after, entry.user, "anti_manage_server",
                     "anti_manage_server_limit", "anti_manage_server_window",
                     "punish_anti_manage_server", "Modification du serveur")
+                if sanctionne:
+                    # Revenir aux parametres d'avant
+                    try:
+                        edit_kwargs = {}
+                        if before.name != after.name:
+                            edit_kwargs["name"] = before.name
+                        if before.verification_level != after.verification_level:
+                            edit_kwargs["verification_level"] = before.verification_level
+                        if before.default_notifications != after.default_notifications:
+                            edit_kwargs["default_notifications"] = before.default_notifications
+                        if edit_kwargs:
+                            await after.edit(**edit_kwargs, reason="Anti-manage server — modifications annulées")
+                        e = discord.Embed(title="↩️ Modifications serveur annulées", color=0xff8c00, timestamp=datetime.utcnow())
+                        e.add_field(name="🛡️ Raison", value="Anti-manage server déclenché", inline=False)
+                        await send_log(after, "raidlog", e)
+                    except Exception as ex:
+                        print(f"[anti_manage_server] Erreur revert: {ex}")
     except: pass
 
 @bot.event
