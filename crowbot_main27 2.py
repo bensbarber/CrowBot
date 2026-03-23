@@ -342,7 +342,6 @@ MULTIWORD_CMDS = {
     "réaction role":       "reactionrole",
     "sticky msg":          "stickymsg",
     "create emoji":        "create_emoji",
-    "lock reason":         "lockr",
     "création limit":      "creation_limit",
     "clear badwords":      "badwords",
     "boostembed test":     "boostembed",
@@ -854,222 +853,240 @@ async def on_command_error(ctx, error):
 
 def build_embeds(guild=None):
     footer = "CrowBot - Préfixe actuel : +"
-    note   = "*Les paramètres peuvent etre des noms, des mentions, ou des IDs*"
+    note   = "*Les paramètres peuvent être des noms, des mentions, ou des IDs*"
     embeds = {}
 
-    e1 = discord.Embed(title="🛠️ Utilitaire", color=get_color(guild.id) if guild else 0x1a0a2e)
-    e1.description = note
+    e = discord.Embed(title="🛠️ Utilitaire", color=get_color(guild.id) if guild else 0x1a0a2e)
+    e.description = note
     for cmd, desc in [
-        ("+changelogs",            "Affiché les dernieres notes de mise a jour"),
-        ("+allbots",               "Liste des bots presents sur le serveur"),
-        ("+alladmins",             "Liste des membres ayant la permission administrateur"),
-        ("+botadmins",             "Liste des bots ayant la permission administrateur"),
-        ("+boosters",              "Liste des membres boostant le serveur"),
-        ("+rolemembers <role>",    "Liste des membres ayant un role precis"),
-        ("+serverinfo",            "Informations relatives au serveur"),
-        ("+vocinfo",               "Informations relatives a l'activité vocale"),
-        ("+role <role>",           "Informations relatives a un role"),
-        ("+channel [salon]",       "Informations relatives a un salon"),
-        ("+user [membre]",         "Informations relatives a un utilisateur"),
-        ("+member [membre]",       "Informations relatives a un membre sur le serveur"),
-        ("+pic [membre]",          "Recupere la photo de profil"),
-        ("+banner [membre]",       "Recupere la banniere"),
-        ("+server pic",            "Recupere l'icone du serveur"),
-        ("+server banner",         "Recupere la banniere du serveur"),
-        ("+snipe",                 "Dernier message supprimé du salon"),
-        ("+emoji <emoji>",         "Recupere l'image d'un emoji custom"),
-        ("+image <mot-cle>",       "Recherche Google Images"),
-        ("+suggestion <message>",  "Poste une suggestion sur le serveur"),
-        ("+wiki <mot-cle>",        "Recherche Wikipedia"),
-        ("+calc <calcul>",         "Resout des calculs ou des equations"),
-        ("+crowbots",              "Invitation pour le serveur de support"),
-    ]: e1.add_field(name=f"**{cmd}**", value=desc, inline=False)
-    e1.set_footer(text=footer)
-    embeds["utilitaire"] = e1
+        ("+changelogs", "Affiché les dernieres notes de mise a jour"),
+        ("+allbots", "Liste des bots presents sur le serveur"),
+        ("+alladmins", "Liste des membres ayant la permission administrateur"),
+        ("+botadmins", "Liste des bots ayant la permission administrateur"),
+        ("+boosters", "Liste des membres boostant le serveur"),
+        ("+rolemembers <role>", "Liste des membres ayant un role precis"),
+        ("+serverinfo", "Informations relatives au serveur"),
+        ("+vocinfo", "Informations relatives a l'activité vocale"),
+        ("+role <role>", "Informations relatives a un role"),
+        ("+channel [salon]", "Informations relatives a un salon"),
+        ("+user [membre]", "Informations relatives a un utilisateur"),
+        ("+member [membre]", "Informations relatives a un membre sur le serveur"),
+        ("+pic [membre]", "Recupere la photo de profil"),
+        ("+banner [membre]", "Recupere la banniere"),
+        ("+server banner", "Recupere la banniere du serveur"),
+        ("+snipe", "Dernier message supprimé du salon"),
+        ("+emoji <emoji>", "Recupere l'image d'un emoji custom"),
+        ("+image <mot-cle>", "Recherche Google Images"),
+        ("+suggestion <message>", "Poste une suggestion sur le serveur"),
+        ("+wiki <mot-cle>", "Recherche Wikipedia"),
+        ("+calc <calcul>", "Resout des calculs ou des equations"),
+        ("+crowbots", "Invitation pour le serveur de support"),
+        ("+avatar", "Photo de profil avec bouton navigateur"),
+        ("+id", "Retourne l'ID de n'importe quoi"),
+        ("+poll <question> <ch1> <ch2>", "Cree un sondage avec reactions"),
+    ]: e.add_field(name=f"**{cmd}**", value=desc, inline=False)
+    e.set_footer(text=footer)
+    embeds["utilitaire"] = e
 
-    e2 = discord.Embed(title="🤖 Controle du bot", color=get_color(guild.id) if guild else 0x1a0a2e)
-    e2.description = note
+    e = discord.Embed(title="🤖 Controle du bot", color=get_color(guild.id) if guild else 0x1a0a2e)
+    e.description = note
     for cmd, desc in [
-        ("+setname <nom>",              "Change le nom du bot"),
-        ("+setpic <lien>",              "Change la photo de profil du bot"),
-        ("+setbanner <lien>",           "Change la banniere du bot"),
-        ("+setprofil",                  "Modifié le profil du bot en interactif"),
-        ("+theme <couleur>",            "Change la couleur des embeds"),
-        ("+playto / +listen / +watch",  "Change l'activité du bot"),
-        ("+compet / +stream",           "Activité competition ou stream"),
-        ("+removeactivity",             "Supprimé l'activité du bot"),
+        ("+setname <nom>", "Change le nom du bot"),
+        ("+setpic <lien>", "Change la photo de profil du bot"),
+        ("+setbanner <lien>", "Change la banniere du bot"),
+        ("+setprofil", "Modifié le profil du bot en interactif"),
+        ("+theme <couleur>", "Change la couleur des embeds"),
+        ("+playto / +listen / +watch", "Change l'activité du bot"),
+        ("+compet / +stream", "Activité competition ou stream"),
+        ("+removeactivity", "Supprimé l'activité du bot"),
         ("+online / +idle / +dnd / +invisible", "Change le statut du bot"),
-        ("+mp <membre> <message>",      "Envoie un MP a un membre"),
-        ("+server list",                "Liste des serveurs du bot"),
-        ("+owner [membre]",             "Donne/affiche les owners du bot"),
-        ("+unowner <membre>",           "Retiré le grade owner"),
-        ("+clear owners",               "Supprimé tous les owners"),
-        ("+bl [membre] [raison]",       "Ajoute/affiche la blacklist du bot"),
-        ("+unbl <membre>",              "Retiré de la blacklist"),
-        ("+blinfo <membre>",            "Infos blacklist d'un membre"),
-        ("+clear bl",                   "Vidé la blacklist du bot"),
-        ("+say <message>",              "Fait dire au bot le message voulu"),
-        ("+prefix <prefixe>",           "Change le préfixe sur ce serveur"),
-        ("+reset server",               "Réinitialisé les paramètres de ce serveur"),
-        ("+resetall",                   "Réinitialisé tous les paramètres du bot"),
-        ("+permchannel <membre>",       "Coche toutes les permissions pour un membre"),
-    ]: e2.add_field(name=f"**{cmd}**", value=desc, inline=False)
-    e2.set_footer(text=footer)
-    embeds["controle"] = e2
+        ("+mp <membre> <message>", "Envoie un MP a un membre"),
+        ("+server list", "Liste des serveurs du bot"),
+        ("+owner [membre]", "Donne/affiche les owners du bot"),
+        ("+unowner <membre>", "Retiré le grade owner"),
+        ("+clear owners", "Supprimé tous les owners"),
+        ("+bl [membre] [raison]", "Ajoute/affiche la blacklist du bot"),
+        ("+unbl <membre>", "Retiré de la blacklist"),
+        ("+blinfo <membre>", "Infos blacklist d'un membre"),
+        ("+clear bl", "Vidé la blacklist du bot"),
+        ("+say <message>", "Fait dire au bot le message voulu"),
+        ("+prefix <prefixe>", "Change le préfixe sur ce serveur"),
+        ("+reset server", "Réinitialisé les paramètres de ce serveur"),
+        ("+resetall", "Réinitialisé tous les paramètres du bot"),
+        ("+permchannel <membre>", "Coche toutes les permissions pour un membre"),
+        ("+server pic", "Récupère l'icône du serveur"),
+    ]: e.add_field(name=f"**{cmd}**", value=desc, inline=False)
+    e.set_footer(text=footer)
+    embeds["controle"] = e
 
-    e3 = discord.Embed(title="🛡️ Antiraid", color=get_color(guild.id) if guild else 0x1a0a2e)
-    e3.description = note
+    e = discord.Embed(title="🛡️ Antiraid", color=get_color(guild.id) if guild else 0x1a0a2e)
+    e.description = note
     for cmd, desc in [
-        ("+secur [on/off/max]",                 "Affiche/modifie tous les paramètres antiraid d'un coup"),
-        ("+raidlog <on/off> [salon]",            "Activé les logs de l'antiraid"),
-        ("+raidping <role>",                     "Role mentionné en cas de raid"),
-        ("+antitoken <on/off/lock>",             "Anti-raid en cas d'arrivée massive"),
-        ("+antitoken <nombre>/<duree>",          "Règle la sensibilite de l'antitoken"),
-        ("+creation_limit <secondes>",           "Age minimum d'un compte pour rejoindre"),
-        ("+antispam <on/off> ou <nb>/<duree>",   "Protection et reglage anti-spam"),
-        ("+antilink <on/off> ou invite/all",     "Protection anti-liens"),
-        ("+antimassmention <on/off> ou <nb>",    "Protection anti-spam de mentions"),
-        ("+antieveryone <on/off/max>",           "Protection contre @everyone"),
-        ("+antirole <on/off/max/danger/all>",    "Protection contre les modifs de roles"),
-        ("+antiwebhook <on/off/max>",            "Protection contre les webhooks"),
-        ("+antiban <on/off/max> ou <nb>/<duree>","Protection contre les bans en masse"),
-        ("+antiunban <on/off/max>",              "Protection contre les unbans"),
-        ("+antibot <on/off/max>",                "Protection contre l'ajout de bots"),
-        ("+antideco <on/off/max>",               "Protection contre les deconnexions en masse"),
-        ("+antiupdate / +antichannel",           "Protection contre modifs serveur/salons"),
-        ("+clear webhooks",                      "Supprimé tous les webhooks du serveur"),
-        ("+badwords <on/off>",                   "Protection contre les mots interdits"),
+        ("+secur [on/off/max]", "Affiche/modifie tous les paramètres antiraid d'un coup"),
+        ("+raidlog <on/off> [salon]", "Activé les logs de l'antiraid"),
+        ("+raidping <role>", "Role mentionné en cas de raid"),
+        ("+antitoken <on/off/lock>", "Anti-raid en cas d'arrivée massive"),
+        ("+antitoken <nombre>/<duree>", "Règle la sensibilite de l'antitoken"),
+        ("+creation_limit <secondes>", "Age minimum d'un compte pour rejoindre"),
+        ("+antispam <on/off> ou <nb>/<duree>", "Protection et reglage anti-spam"),
+        ("+antilink <on/off> ou invite/all", "Protection anti-liens"),
+        ("+antimassmention <on/off> ou <nb>", "Protection anti-spam de mentions"),
+        ("+antieveryone <on/off/max>", "Protection contre @everyone"),
+        ("+antirole <on/off/max/danger/all>", "Protection contre les modifs de roles"),
+        ("+antiwebhook <on/off/max>", "Protection contre les webhooks"),
+        ("+antiunban <on/off/max>", "Protection contre les unbans"),
+        ("+antibot <on/off/max>", "Protection contre l'ajout de bots"),
+        ("+antideco <on/off/max>", "Protection contre les deconnexions en masse"),
+        ("+antiupdate / +antichannel", "Protection contre modifs serveur/salons"),
+        ("+clear webhooks", "Supprimé tous les webhooks du serveur"),
+        ("+badwords <on/off>", "Protection contre les mots interdits"),
         ("+badwords <add/del/list/clear> [mot]", "Gestion de la liste de mots interdits"),
-        ("+punition <type> <sanction>",          "Définit la punition d'un module antiraid"),
-        ("+blrank <on/off/add/del>",             "Blacklist rank"),
-        ("+wl [membre]",                         "Ajoute/affiche la whitelist antiraid"),
-        ("+unwl <membre>",                       "Retiré de la whitelist"),
-        ("+clear wl",                            "Vidé la whitelist antiraid"),
-    ]: e3.add_field(name=f"**{cmd}**", value=desc, inline=False)
-    e3.set_footer(text=footer)
-    embeds["antiraid"] = e3
+        ("+punition <type> <sanction>", "Définit la punition d'un module antiraid"),
+        ("+blrank <on/off/add/del>", "Blacklist rank"),
+        ("+wl [membre]", "Ajoute/affiche la whitelist antiraid"),
+        ("+unwl <membre>", "Retiré de la whitelist"),
+        ("+clear wl", "Vidé la whitelist antiraid"),
+    ]: e.add_field(name=f"**{cmd}**", value=desc, inline=False)
+    e.set_footer(text=footer)
+    embeds["antiraid"] = e
 
-    e4 = discord.Embed(title="⚙️ Gestion du serveur", color=get_color(guild.id) if guild else 0x1a0a2e)
-    e4.description = note
+    e = discord.Embed(title="⚙️ Gestion du serveur", color=get_color(guild.id) if guild else 0x1a0a2e)
+    e.description = note
     for cmd, desc in [
-        ("+giveaway",                           "Créé un giveaway interactif"),
-        ("+end giveaway <ID> / +reroll",        "Terminé ou rejoue un giveaway"),
-        ("+choose <ID>",                        "Tirage au sort sur un message"),
-        ("+embed",                              "Generateur d'embed interactif"),
-        ("+backup <serveur/emoji> [nom]",       "Créé une backup du serveur ou emojis"),
-        ("+backup list/delete/load",            "Gestion des backups"),
-        ("+autobackup <type> <jours>",          "Backups automatiques"),
-        ("+loading <duree> <message>",          "Barre de chargement"),
-        ("+massiverole / +unmassiverole",       "Ajoute/retire un role a tous les membres"),
-        ("+temprole <membre> <role> <duree>",   "Role temporaire"),
-        ("+voicemove <salon1> <salon2>",        "Déplacé tous les membres d'un vocal"),
-        ("+voicekick / +cleanup / +bringall",   "Gestion des membres en vocal"),
-        ("+renew [salon]",                      "Supprimé et recree un salon"),
-        ("+slowmode <duree> [salon]",           "Mode lent (max 6h)"),
-        ("+sync <salon/all>",                   "Synchronisé les permissions avec la catégorie"),
-        ("+autoreact <add/del/list>",           "Réactions automatiques sur un salon"),
-        ("+rolemenu",                           "Menu de roles interactif"),
-        ("+ticket",                             "Ouvre un ticket"),
-        ("+ticket category/role",               "Configuré les tickets"),
-        ("+claim / +rename / +add / +close",    "Gestion des tickets"),
-        ("+reminder <duree> <message>",         "Créé un rappel"),
-        ("+custom <mot-cle> <réponse>",         "Commande personnalisee"),
-        ("+customlist / +clear customs",        "Gestion des commandes custom"),
-        ("+suggestion / +suggestion settings",  "Système de suggestions"),
-        ("+join settings / +leave settings",    "Actions a l'arrivee/depart d'un membre"),
-    ]: e4.add_field(name=f"**{cmd}**", value=desc, inline=False)
-    e4.set_footer(text=footer)
-    embeds["gestion"] = e4
+        ("+giveaway", "Créé un giveaway interactif"),
+        ("+end giveaway <ID> / +reroll", "Terminé ou rejoue un giveaway"),
+        ("+choose <ID>", "Tirage au sort sur un message"),
+        ("+embed", "Generateur d'embed interactif"),
+        ("+backup <serveur/emoji> [nom]", "Créé une backup du serveur ou emojis"),
+        ("+backup list/delete/load", "Gestion des backups"),
+        ("+autobackup <type> <jours>", "Backups automatiques"),
+        ("+loading <duree> <message>", "Barre de chargement"),
+        ("+massiverole / +unmassiverole", "Ajoute/retire un role a tous les membres"),
+        ("+temprole <membre> <role> <duree>", "Role temporaire"),
+        ("+voicemove <salon1> <salon2>", "Déplacé tous les membres d'un vocal"),
+        ("+voicekick / +cleanup / +bringall", "Gestion des membres en vocal"),
+        ("+renew [salon]", "Supprimé et recree un salon"),
+        ("+slowmode <duree> [salon]", "Mode lent (max 6h)"),
+        ("+sync <salon/all>", "Synchronisé les permissions avec la catégorie"),
+        ("+autoreact <add/del/list>", "Réactions automatiques sur un salon"),
+        ("+rolemenu", "Menu de roles interactif"),
+        ("+ticket", "Ouvre un ticket"),
+        ("+ticket category/role", "Configuré les tickets"),
+        ("+claim / +rename / +add / +close", "Gestion des tickets"),
+        ("+reminder <duree> <message>", "Créé un rappel"),
+        ("+custom <mot-cle> <réponse>", "Commande personnalisee"),
+        ("+customlist / +clear customs", "Gestion des commandes custom"),
+        ("+suggestion / +suggestion settings", "Système de suggestions"),
+        ("+join settings / +leave settings", "Actions a l'arrivee/depart d'un membre"),
+    ]: e.add_field(name=f"**{cmd}**", value=desc, inline=False)
+    e.set_footer(text=footer)
+    embeds["gestion"] = e
 
-    e4b = discord.Embed(title="⚙️ Gestion du serveur (suite)", color=get_color(guild.id) if guild else 0x1a0a2e)
-    e4b.description = note
+    e = discord.Embed(title="⚙️ Gestion du serveur (suite)", color=get_color(guild.id) if guild else 0x1a0a2e)
+    e.description = note
     for cmd, desc in [
-        ("+boostembed <on/off/test>",           "Embeds de boost"),
-        ("+set boostembed",                     "Configuré l'embed de boost"),
-        ("+autopublish <on/off>",               "Publication automatique des annonces"),
-        ("+autodelete <cible> <on/off/duree>",  "Suppression automatique"),
-        ("+piconly <add/del> [salon]",          "Salon photos uniquement"),
-        ("+restrict / +unrestrict <emoji>",     "Restreindre un emoji a un role"),
-        ("+report settings",                    "Configuré les reports"),
-        ("+modmail",                            "Configuré les modmails"),
-        ("+openmodmail <membre>",               "Ouvre un modmail manuellement"),
-        ("+public <on/off>",                    "Commandes publiques"),
-        ("+set perm <permission> <role>",       "Donne une permission a un role"),
-        ("+del perm <role>",                    "Supprimé les permissions d'un role"),
-        ("+clear perms",                        "Supprimé toutes les permissions"),
-    ]: e4b.add_field(name=f"**{cmd}**", value=desc, inline=False)
-    e4b.set_footer(text=footer)
-    embeds["gestion2"] = e4b
+        ("+boostembed <on/off/test>", "Embeds de boost"),
+        ("+set boostembed", "Configuré l'embed de boost"),
+        ("+autopublish <on/off>", "Publication automatique des annonces"),
+        ("+autodelete <cible> <on/off/duree>", "Suppression automatique"),
+        ("+piconly <add/del> [salon]", "Salon photos uniquement"),
+        ("+restrict / +unrestrict <emoji>", "Restreindre un emoji a un role"),
+        ("+report settings", "Configuré les reports"),
+        ("+modmail", "Configuré les modmails"),
+        ("+openmodmail <membre>", "Ouvre un modmail manuellement"),
+        ("+public <on/off>", "Commandes publiques"),
+        ("+set perm <permission> <role>", "Donne une permission a un role"),
+        ("+del perm <role>", "Supprimé les permissions d'un role"),
+        ("+clear perms", "Supprimé toutes les permissions"),
+        ("+create emoji <nom> <lien>", "Cree un emoji custom"),
+        ("+stickymsg off", "Supprime le message epingle"),
+        ("+tempvoc", "Systeme de vocaux temporaires"),
+        ("+antiraid settings", "Panneau antiraid avance (anti kick, ban, channel...)"),
+        ("+automod", "Panneau de configuration de l'automod"),
+        ("+color <hex>", "Apercu d'une couleur hex"),
+        ("+set muterole", "Definit le role muet sur un role existant"),
+    ]: e.add_field(name=f"**{cmd}**", value=desc, inline=False)
+    e.set_footer(text=footer)
+    embeds["gestion2"] = e
 
-    e5 = discord.Embed(title="📋 Logs", color=get_color(guild.id) if guild else 0x1a0a2e)
-    e5.description = note
+    e = discord.Embed(title="📋 Logs", color=get_color(guild.id) if guild else 0x1a0a2e)
+    e.description = note
     for cmd, desc in [
-        ("+settings",                 "Affiché les paramètres des logs"),
-        ("+modlog on/off [salon]",    "Logs de moderation"),
-        ("+messagelog on/off [salon]","Logs des messages supprimes/edites"),
-        ("+voicelog on/off [salon]",  "Logs de l'activité vocale"),
-        ("+boostlog on/off [salon]",  "Logs de boosts"),
-        ("+rolelog on/off [salon]",   "Logs des roles"),
-        ("+raidlog on/off [salon]",   "Logs de l'antiraid"),
-        ("+joinlog on/off [salon]",   "Logs d'arrivees"),
-        ("+leavelog on/off [salon]",  "Logs de departs"),
-        ("+autoconfiglog",            "Créé automatiquement tous les salons de logs"),
-        ("+nolog <add/del> [salon]",  "Désactivé les logs dans un salon specifique"),
-    ]: e5.add_field(name=f"**{cmd}**", value=desc, inline=False)
-    e5.set_footer(text=footer)
-    embeds["logs"] = e5
+        ("+settings", "Affiché les paramètres des logs"),
+        ("+modlog on/off [salon]", "Logs de moderation"),
+        ("+voicelog on/off [salon]", "Logs de l'activité vocale"),
+        ("+boostlog on/off [salon]", "Logs de boosts"),
+        ("+rolelog on/off [salon]", "Logs des roles"),
+        ("+raidlog on/off [salon]", "Logs de l'antiraid"),
+        ("+joinlog on/off [salon]", "Logs d'arrivees"),
+        ("+leavelog on/off [salon]", "Logs de departs"),
+        ("+autoconfiglog", "Créé automatiquement tous les salons de logs"),
+        ("+nolog <add/del> [salon]", "Désactivé les logs dans un salon specifique"),
+        ("+antiraid settings", "Panneau antiraid avance"),
+    ]: e.add_field(name=f"**{cmd}**", value=desc, inline=False)
+    e.set_footer(text=footer)
+    embeds["logs"] = e
 
-    e6 = discord.Embed(title="⚖️ Paramètres de moderation", color=get_color(guild.id) if guild else 0x1a0a2e)
-    e6.description = note
+    e = discord.Embed(title="⚖️ Paramètres de modération", color=get_color(guild.id) if guild else 0x1a0a2e)
+    e.description = note
     for cmd, desc in [
-        ("+muterole",                              "Créé ou met a jour le role muet"),
-        ("+set muterole <role>",                   "Définit le role muet"),
-        ("+clear limit <nombre>",                  "Limite de la commande +clear"),
-        ("+strikes [declencheur] [nombre]",        "Gestion des strikes"),
-        ("+ancien <duree>",                        "Durée pour etre considere comme ancien"),
-        ("+punish",                                "Affiché les sanctions automatiques"),
-        ("+punish add <nb> <duree> <sanction>",    "Ajouté une sanction automatique"),
-        ("+punish del <numero>",                   "Supprimé une sanction automatique"),
-        ("+punish setup",                          "Remet les sanctions par defaut"),
-        ("+noderank <add/del> <role>",             "Role non supprimé lors d'un derank"),
-        ("+piconly <add/del> [salon]",             "Salon a photos uniquement"),
-        ("+join settings / +leave settings",       "Paramètres d'arrivée et de départ"),
-        ("+public <on/off>",                       "Commandes publiques on/off"),
-    ]: e6.add_field(name=f"**{cmd}**", value=desc, inline=False)
-    e6.set_footer(text=footer)
-    embeds["modparams"] = e6
+        ("+muterole", "Créé ou met a jour le role muet"),
+        ("+set muterole <role>", "Définit le role muet"),
+        ("+clear limit <nombre>", "Limite de la commande +clear"),
+        ("+strikes [declencheur] [nombre]", "Gestion des strikes"),
+        ("+ancien <duree>", "Durée pour etre considere comme ancien"),
+        ("+punish", "Affiché les sanctions automatiques"),
+        ("+punish add <nb> <duree> <sanction>", "Ajouté une sanction automatique"),
+        ("+punish del <numero>", "Supprimé une sanction automatique"),
+        ("+punish setup", "Remet les sanctions par defaut"),
+        ("+noderank <add/del> <role>", "Role non supprimé lors d'un derank"),
+        ("+piconly <add/del> [salon]", "Salon a photos uniquement"),
+        ("+join settings / +leave settings", "Paramètres d'arrivée et de départ"),
+        ("+public <on/off>", "Commandes publiques on/off"),
+        ("+set muterole <role>", "Definit le role muet sur un role existant"),
+        ("+timeout <membre> <duree> [raison]", "Timeout natif Discord (max 28 jours)"),
+        ("+untimeout <membre>", "Leve le timeout d'un membre"),
+        ("+softban <membre> [raison]", "Ban + unban immediat, supprime les messages 7j"),
+        ("+unhoist", "Retire les caracteres speciaux des pseudos"),
+        ("+massban <ID1> <ID2>...", "Bannit plusieurs membres par ID"),
+        ("+unmuteall", "Demute tous les membres mutes"),
+        ("+purge <bots/humans/links/images>", "Supprime des messages par type"),
+        ("+create emoji", "Cree un emoji custom depuis un lien ou image"),
+        ("+nuke", "Clone le salon (supprime et recree)"),
+        ("+reactionrole", "Reaction role sur un message existant"),
+    ]: e.add_field(name=f"**{cmd}**", value=desc, inline=False)
+    e.set_footer(text=footer)
+    embeds["modparams"] = e
 
-    e7 = discord.Embed(title="🔨 Moderation", color=get_color(guild.id) if guild else 0x1a0a2e)
-    e7.description = note
+    e = discord.Embed(title="🔨 Modération", color=get_color(guild.id) if guild else 0x1a0a2e)
+    e.description = note
     for cmd, desc in [
-        ("+warn <membre> [raison]",               "Avertissement"),
-        ("+mute <membre> [raison]",               "Muté permanent"),
-        ("+tempmute <membre> <duree> [raison]",   "Muté temporaire"),
-        ("+unmute <membre>",                      "Fin du muté"),
-        ("+mutelist / +unmuteall",                "Liste des mutes / Demuter tout le monde"),
-        ("+cmute <membre> [raison]",              "Muté sur le salon actuel"),
-        ("+tempcmute <membre> <duree> [raison]",  "Muté temporaire sur le salon actuel"),
-        ("+uncmute <membre>",                     "Fin du cmute"),
-        ("+kick <membre> [raison]",               "Expulsé un membre"),
-        ("+ban <membre> [raison]",                "Bannit un membre"),
-        ("+tempban <membre> <duree> [raison]",    "Ban temporaire"),
-        ("+unban <membre>",                       "Deban un membre"),
-        ("+banlist / +unbanall",                  "Liste des bans / Debannir tout le monde"),
-        ("+clear [nombre] [membre]",              "Supprimé des messages"),
-        ("+sanctions <membre>",                   "Affiché les sanctions d'un membre"),
-        ("+del sanction <membre> <numero>",       "Supprimé une sanction"),
-        ("+clear sanctions / +clear all sanctions","Supprimé les sanctions"),
-        ("+addrole / +delrole <membre> <role>",   "Ajoute/retire un role"),
-        ("+derank <membre>",                      "Supprimé tous les roles d'un membre"),
-        ("+lock / +unlock [salon]",               "Verrouille/deverrouille un salon"),
-        ("+lockall / +unlockall",                 "Verrouille/deverrouille tous les salons"),
-        ("+hide / +unhide [salon]",               "Cache/affiche un salon"),
-        ("+hideall / +unhideall",                 "Cache/affiche tous les salons"),
-        ("+renew [salon]",                        "Supprimé et recree un salon"),
-        ("+permchannel <membre>",                 "Toutes les permissions pour un membre"),
-    ]: e7.add_field(name=f"**{cmd}**", value=desc, inline=False)
-    e7.set_footer(text=footer)
-    embeds["moderation"] = e7
+        ("+warn <membre> [raison]", "Avertissement"),
+        ("+mute <membre> [raison]", "Muté permanent"),
+        ("+unmute <membre>", "Fin du muté"),
+        ("+mutelist / +unmuteall", "Liste des mutes / Demuter tout le monde"),
+        ("+cmute <membre> [raison]", "Muté sur le salon actuel"),
+        ("+tempcmute <membre> <duree> [raison]", "Muté temporaire sur le salon actuel"),
+        ("+uncmute <membre>", "Fin du cmute"),
+        ("+kick <membre> [raison]", "Expulsé un membre"),
+        ("+ban <membre> [raison]", "Bannit un membre"),
+        ("+unban <membre>", "Deban un membre"),
+        ("+banlist / +unbanall", "Liste des bans / Debannir tout le monde"),
+        ("+clear [nombre] [membre]", "Supprimé des messages"),
+        ("+sanctions <membre>", "Affiché les sanctions d'un membre"),
+        ("+del sanction <membre> <numero>", "Supprimé une sanction"),
+        ("+addrole / +delrole <membre> <role>", "Ajoute/retire un role"),
+        ("+derank <membre>", "Supprimé tous les roles d'un membre"),
+        ("+lock / +unlock [salon]", "Verrouille/deverrouille un salon"),
+        ("+lockall / +unlockall", "Verrouille/deverrouille tous les salons"),
+        ("+hide / +unhide [salon]", "Cache/affiche un salon"),
+        ("+hideall / +unhideall", "Cache/affiche tous les salons"),
+        ("+renew [salon]", "Supprimé et recree un salon"),
+        ("+permchannel <membre>", "Toutes les permissions pour un membre"),
+        ("+warnlist", "Liste de tous les membres avec des avertissements"),
+    ]: e.add_field(name=f"**{cmd}**", value=desc, inline=False)
+    e.set_footer(text=footer)
+    embeds["moderation"] = e
 
     return embeds
 
@@ -1185,8 +1202,6 @@ async def warn(ctx, member: discord.Member, *, reason="Aucune raison"):
     count = len(get_member("sanctions.json", ctx.guild.id, member.id).get("list", []))
     await ctx.send(f"{member.mention} a recu un avertissement. Raison : {reason} ({count} warn(s) au total)")
     await log_mod(ctx.guild, "warn", member, ctx.author, reason)
-    try: await member.send(f"Tu as recu un avertissement sur {ctx.guild.name}. Raison : {reason}")
-    except: pass
 
 @bot.command(name="mute")
 @commands.has_permissions(manage_roles=True)
@@ -1196,8 +1211,6 @@ async def mute(ctx, member: discord.Member, *, reason="Aucune raison"):
     await add_sanction(ctx.guild.id, member.id, "mute", reason, ctx.author.id)
     await ctx.send(f"{member.mention} a ete mute. Raison : {reason}")
     await log_mod(ctx.guild, "mute", member, ctx.author, reason)
-    try: await member.send(f"Tu as ete mute sur {ctx.guild.name}. Raison : {reason}")
-    except: pass
 
 
 
@@ -1268,8 +1281,6 @@ async def unmuteall(ctx):
 @commands.has_permissions(kick_members=True)
 async def kick(ctx, member: discord.Member, *, reason="Aucune raison"):
     await add_sanction(ctx.guild.id, member.id, "kick", reason, ctx.author.id)
-    try: await member.send(f"Tu as ete expulsé de **{ctx.guild.name}**.\nRaison : {reason}")
-    except: pass
     await member.kick(reason=reason)
     await ctx.send(f"{member} a ete expulse. Raison : {reason}")
     await log_mod(ctx.guild, "kick", member, ctx.author, reason)
@@ -1278,8 +1289,6 @@ async def kick(ctx, member: discord.Member, *, reason="Aucune raison"):
 @commands.has_permissions(ban_members=True)
 async def ban(ctx, member: discord.Member, *, reason="Aucune raison"):
     await add_sanction(ctx.guild.id, member.id, "ban", reason, ctx.author.id)
-    try: await member.send(f"Tu as ete banni de **{ctx.guild.name}**.\nRaison : {reason}")
-    except: pass
     await member.ban(reason=reason)
     await ctx.send(f"{member} a ete banni. Raison : {reason}")
     await log_mod(ctx.guild, "ban", member, ctx.author, reason)
@@ -4242,16 +4251,6 @@ async def autoupdate(ctx, action: str):
     await ctx.send(f"Autoupdate {'activé' if action.lower() == 'on' else 'désactivé'}.")
 
 # Override du lock existant pour supporter une raison affichée
-@bot.command(name="lockr")
-@commands.has_permissions(manage_channels=True)
-async def lockr(ctx, channel: discord.TextChannel = None, *, reason: str = "Salon temporairement fermé."):
-    channel = channel or ctx.channel
-    await channel.set_permissions(ctx.guild.default_role, send_messages=False)
-    e = discord.Embed(title="🔒 Salon verrouillé", description=reason, color=0xff4500, timestamp=datetime.utcnow())
-    e.set_footer(text=f"Par {ctx.author}")
-    await channel.send(embed=e)
-    if channel != ctx.channel:
-        await ctx.send(f"**#{channel.name}** verrouillé.")
 
 @bot.command(name="tempvoc")
 @commands.has_permissions(manage_channels=True)
@@ -4310,7 +4309,6 @@ class TempvocView(discord.ui.View):
         v = discord.ui.View(timeout=60); v.add_item(sel)
         await interaction.response.send_message(view=v, ephemeral=True)
 
-@bot.event
 async def on_voice_state_update_tempvoc(member, before, after):
     cfg    = get_guild("modconfig.json", member.guild.id)
     hub_id = cfg.get("tempvoc_hub")
@@ -4320,10 +4318,38 @@ async def on_voice_state_update_tempvoc(member, before, after):
         cat_id   = cfg.get("tempvoc_category")
         category = member.guild.get_channel(int(cat_id)) if cat_id else None
         limit    = cfg.get("tempvoc_limit", 0)
+        # Permissions : le createur peut tout gerer sur son salon
+        overwrites = {
+            member.guild.default_role: discord.PermissionOverwrite(
+                view_channel=True,
+                connect=True,
+                speak=True
+            ),
+            member: discord.PermissionOverwrite(
+                view_channel=True,
+                connect=True,
+                speak=True,
+                manage_channels=True,    # renommer, changer la limite
+                move_members=True,       # deplacer/expulser des membres
+                mute_members=True,       # muter quelqu'un dans son vocal
+                deafen_members=True,     # deafen quelqu'un dans son vocal
+                manage_permissions=True, # gerer les permissions du salon
+                priority_speaker=True,
+                stream=True,
+            ),
+            member.guild.me: discord.PermissionOverwrite(
+                view_channel=True,
+                connect=True,
+                manage_channels=True,
+                move_members=True,
+                manage_permissions=True,
+            ),
+        }
         vc = await member.guild.create_voice_channel(
             f"🎙️ {member.display_name[:20]}",
             category=category,
-            user_limit=limit
+            user_limit=limit,
+            overwrites=overwrites
         )
         # Sauvegarder le vocal temporaire
         tvocs = cfg.get("tempvocs", {}); tvocs[str(vc.id)] = str(member.id)
@@ -5176,6 +5202,7 @@ bot.add_listener(on_member_remove_antikick,        "on_member_remove")
 bot.add_listener(on_member_remove_antiprune,       "on_member_remove")
 bot.add_listener(on_member_ban_antiraid,           "on_member_ban")
 bot.add_listener(on_voice_state_update_antiraid,   "on_voice_state_update")
+bot.add_listener(on_voice_state_update_tempvoc,     "on_voice_state_update")
 
 ANTIRAID_MODULES = {
     "anti_delete_channel":  {"label": "Anti delete channel",  "emoji": "🗑️", "default_limit": 3,  "default_window": 10, "default_punish": "derank"},
@@ -5340,8 +5367,6 @@ async def timeout_cmd(ctx, member: discord.Member, duration: str, *, reason: str
         await add_sanction(ctx.guild.id, member.id, "timeout", f"{duration} - {reason}", ctx.author.id)
         await ctx.send(f"{member.mention} a ete mis en timeout pour {duration}. Raison : {reason} (fin <t:{int(until.timestamp())}:R>)")
         await log_mod(ctx.guild, "mute", member, ctx.author, f"Timeout {duration} - {reason}")
-        try: await member.send(f"Tu as recu un timeout de {duration} sur {ctx.guild.name}. Raison : {reason}")
-        except: pass
     except discord.Forbidden:
         await ctx.send("Je n'ai pas la permission de timeout ce membre.")
     except Exception as ex:
@@ -5363,9 +5388,6 @@ async def untimeout_cmd(ctx, member: discord.Member):
 async def softban(ctx, member: discord.Member, *, reason: str = "Aucune raison"):
     try:
         await add_sanction(ctx.guild.id, member.id, "softban", reason, ctx.author.id)
-        dm_msg = f"Tu as ete softbanni de {ctx.guild.name}. Raison : {reason}. Tu peux revenir avec une invitation."
-        try: await member.send(dm_msg)
-        except: pass
         await ctx.guild.ban(member, reason=f"Softban par {ctx.author} - {reason}", delete_message_days=7)
         await ctx.guild.unban(member, reason="Softban - unban automatique")
         await ctx.send(f"{member} a ete softbanni (messages supprimes, peut revenir). Raison : {reason}")
@@ -5374,5 +5396,212 @@ async def softban(ctx, member: discord.Member, *, reason: str = "Aucune raison")
         await ctx.send("Je n'ai pas la permission de bannir ce membre.")
     except Exception as ex:
         await ctx.send(f"Erreur : {ex}")
+
+
+@bot.command(name="vocal")
+async def vocal_cmd(ctx):
+    """Gere ton salon vocal temporaire."""
+    cfg   = get_guild("modconfig.json", ctx.guild.id)
+    tvocs = cfg.get("tempvocs", {})
+    # Trouver le vocal temp du membre
+    vc_id = next((vid for vid, owner in tvocs.items() if owner == str(ctx.author.id)), None)
+    if not vc_id:
+        return await ctx.send("Tu n'as pas de salon vocal temporaire actif.")
+    vc = ctx.guild.get_channel(int(vc_id))
+    if not vc:
+        return await ctx.send("Ton salon vocal temporaire est introuvable.")
+    view = TempVocalView(ctx.author, vc)
+    e = discord.Embed(title=f"🎙️ Ton salon : {vc.name}", color=get_color(ctx.guild.id))
+    e.add_field(name="👥 Limite",   value=str(vc.user_limit) if vc.user_limit else "Aucune", inline=True)
+    e.add_field(name="🔒 Statut",   value="Privé" if vc.overwrites_for(ctx.guild.default_role).connect is False else "Public", inline=True)
+    e.add_field(name="👤 Membres",  value=str(len(vc.members)), inline=True)
+    e.set_footer(text="Utilise les boutons pour gérer ton salon")
+    msg = await ctx.send(embed=e, view=view)
+    view.message = msg
+
+class TempVocalView(discord.ui.View):
+    def __init__(self, owner, vc):
+        super().__init__(timeout=60)
+        self.owner   = owner
+        self.vc      = vc
+        self.message = None
+
+    async def check(self, interaction):
+        if interaction.user != self.owner:
+            await interaction.response.send_message("Ce n'est pas ton salon.", ephemeral=True)
+            return False
+        return True
+
+    async def refresh(self, interaction):
+        vc = interaction.guild.get_channel(self.vc.id)
+        if not vc:
+            return await interaction.response.edit_message(content="Salon introuvable.", view=None)
+        e = discord.Embed(title=f"🎙️ Ton salon : {vc.name}", color=get_color(interaction.guild.id))
+        e.add_field(name="👥 Limite",   value=str(vc.user_limit) if vc.user_limit else "Aucune", inline=True)
+        e.add_field(name="🔒 Statut",   value="Privé" if vc.overwrites_for(interaction.guild.default_role).connect is False else "Public", inline=True)
+        e.add_field(name="👤 Membres",  value=str(len(vc.members)), inline=True)
+        e.set_footer(text="Utilise les boutons pour gérer ton salon")
+        await interaction.response.edit_message(embed=e, view=self)
+
+    @discord.ui.button(label="🔓 Public", style=discord.ButtonStyle.success, custom_id="tv_public")
+    async def set_public(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self.check(interaction): return
+        try:
+            await self.vc.set_permissions(interaction.guild.default_role, connect=True, view_channel=True)
+            await interaction.channel.send(f"🔓 **{self.vc.name}** est maintenant **public**.", delete_after=5)
+            await self.refresh(interaction)
+        except Exception as ex:
+            await interaction.response.send_message(f"Erreur : {ex}", ephemeral=True)
+
+    @discord.ui.button(label="🔒 Privé", style=discord.ButtonStyle.danger, custom_id="tv_private")
+    async def set_private(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self.check(interaction): return
+        try:
+            await self.vc.set_permissions(interaction.guild.default_role, connect=False, view_channel=True)
+            await interaction.channel.send(f"🔒 **{self.vc.name}** est maintenant **privé**.", delete_after=5)
+            await self.refresh(interaction)
+        except Exception as ex:
+            await interaction.response.send_message(f"Erreur : {ex}", ephemeral=True)
+
+    @discord.ui.button(label="✏️ Renommer", style=discord.ButtonStyle.primary, custom_id="tv_rename")
+    async def rename(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self.check(interaction): return
+        await interaction.response.send_modal(TempVocalRenameModal(self.vc, self))
+
+    @discord.ui.button(label="👥 Limite", style=discord.ButtonStyle.secondary, custom_id="tv_limit")
+    async def set_limit(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self.check(interaction): return
+        await interaction.response.send_modal(TempVocalLimitModal(self.vc, self))
+
+    @discord.ui.button(label="🚫 Expulser", style=discord.ButtonStyle.danger, custom_id="tv_kick")
+    async def kick_member(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self.check(interaction): return
+        vc = interaction.guild.get_channel(self.vc.id)
+        members = [m for m in vc.members if m != self.owner]
+        if not members:
+            return await interaction.response.send_message("Aucun membre a expulser.", ephemeral=True)
+        sel = discord.ui.Select(
+            placeholder="Choisir un membre a expulser",
+            options=[discord.SelectOption(label=m.display_name[:25], value=str(m.id)) for m in members[:25]]
+        )
+        async def kick_cb(inter):
+            m = interaction.guild.get_member(int(inter.data["values"][0]))
+            if m and m.voice and m.voice.channel == vc:
+                await m.move_to(None)
+                await inter.response.send_message(f"**{m.display_name}** a ete expulse du salon.", ephemeral=True)
+            else:
+                await inter.response.send_message("Membre introuvable dans le salon.", ephemeral=True)
+        sel.callback = kick_cb
+        v = discord.ui.View(timeout=30); v.add_item(sel)
+        await interaction.response.send_message(view=v, ephemeral=True)
+
+    async def on_timeout(self):
+        try:
+            for item in self.children: item.disabled = True
+            if self.message: await self.message.edit(view=self)
+        except: pass
+
+class TempVocalRenameModal(discord.ui.Modal, title="Renommer le salon"):
+    name = discord.ui.TextInput(label="Nouveau nom", placeholder="Ex: Salon de jeu", max_length=50)
+    def __init__(self, vc, parent):
+        super().__init__()
+        self.vc = vc; self.parent = parent
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            await self.vc.edit(name=str(self.name))
+            await self.parent.refresh(interaction)
+        except Exception as ex:
+            await interaction.response.send_message(f"Erreur : {ex}", ephemeral=True)
+
+class TempVocalLimitModal(discord.ui.Modal, title="Limite de membres"):
+    limit = discord.ui.TextInput(label="Limite (0 = aucune limite)", placeholder="Ex: 5", max_length=2)
+    def __init__(self, vc, parent):
+        super().__init__()
+        self.vc = vc; self.parent = parent
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            lim = max(0, int(str(self.limit)))
+            await self.vc.edit(user_limit=lim)
+            await self.parent.refresh(interaction)
+        except Exception as ex:
+            await interaction.response.send_message(f"Erreur : {ex}", ephemeral=True)
+
+
+
+@bot.command(name="warnlist")
+@commands.has_permissions(manage_messages=True)
+async def warnlist(ctx):
+    """Affiche tous les membres ayant des avertissements sur le serveur."""
+    data = db_load("sanctions.json").get(str(ctx.guild.id), {})
+    # Filtrer les membres avec au moins 1 warn
+    warned = []
+    for mid, mdata in data.items():
+        warns = [s for s in mdata.get("list", []) if s["type"] in ("warn", "avertissement")]
+        if warns:
+            member = ctx.guild.get_member(int(mid))
+            name   = str(member) if member else f"Inconnu ({mid})"
+            warned.append((name, mid, warns))
+
+    if not warned:
+        return await ctx.send("Aucun membre avec des avertissements sur ce serveur.")
+
+    # Trier par nb de warns decroissant
+    warned.sort(key=lambda x: len(x[2]), reverse=True)
+
+    per_page = 10
+    pages    = [warned[i:i+per_page] for i in range(0, len(warned), per_page)]
+    total    = len(warned)
+
+    def make_embed(page_idx):
+        e = discord.Embed(
+            title=f"⚠️ Membres avertis ({total})",
+            color=0xffd700,
+            timestamp=datetime.utcnow()
+        )
+        for name, mid, warns in pages[page_idx]:
+            last = warns[-1]
+            e.add_field(
+                name=f"⚠️ {name}",
+                value=f"`{len(warns)}` warn(s) | Dernier : {last['reason']} — {last['date'][:10]}",
+                inline=False
+            )
+        e.set_footer(text=f"Page {page_idx+1}/{len(pages)} • {total} membre(s) avertis")
+        return e
+
+    class WarnListView(discord.ui.View):
+        def __init__(self):
+            super().__init__(timeout=120)
+            self.page    = 0
+            self.message = None
+            self._update_buttons()
+
+        def _update_buttons(self):
+            self.prev_btn.disabled = (self.page == 0)
+            self.next_btn.disabled = (self.page == len(pages) - 1)
+
+        @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary, custom_id="wl_prev")
+        async def prev_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+            if self.page > 0:
+                self.page -= 1
+                self._update_buttons()
+            await interaction.response.edit_message(embed=make_embed(self.page), view=self)
+
+        @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary, custom_id="wl_next")
+        async def next_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+            if self.page < len(pages) - 1:
+                self.page += 1
+                self._update_buttons()
+            await interaction.response.edit_message(embed=make_embed(self.page), view=self)
+
+        async def on_timeout(self):
+            try:
+                for item in self.children: item.disabled = True
+                if self.message: await self.message.edit(view=self)
+            except: pass
+
+    view = WarnListView()
+    msg  = await ctx.send(embed=make_embed(0), view=view)
+    view.message = msg
+
 
 bot.run(TOKEN)
