@@ -394,7 +394,7 @@ MULTIWORD_CMDS = {
     "set boostembed":      "set_boostembed",
     "set perm":            "set_perm",
     "del perm":            "del_perm",
-    "ticket settings":     "ticket_settings",
+    "ticket settings":     "ticket",
     "reminder list":       "reminder_list",
     "custom transfer":     "custom_transfer",
     "backup list":         "backup_list",
@@ -2978,22 +2978,9 @@ class TicketSettingsView(discord.ui.View):
         except: pass
 
 @bot.command(name="ticket")
-async def ticket(ctx):
-    cfg = get_ticket_cfg(ctx.guild.id)
-    try: color = int(cfg.get("panel_color","0x00bfff").replace("0x",""), 16)
-    except: color = 0x00bfff
-    e = discord.Embed(
-        title=cfg.get("panel_title","🎫 Ouvrir un ticket"),
-        description=cfg.get("panel_desc","Sélectionné le type de ticket ci-dessous.\nNotre equipe te repondra au plus vite."),
-        color=color
-    )
-    e.set_footer(text="Pocoyo - Système de tickets")
-    pview = TicketButtonView(ctx.guild.id) if cfg.get("panel_type") == "button" else TicketSelectView(ctx.guild.id)
-    await ctx.send(embed=e, view=pview)
-
-@bot.command(name="ticket_settings")
 @commands.has_permissions(administrator=True)
-async def ticket_settings(ctx):
+async def ticket_cmd(ctx):
+    """Une seule commande : ouvre le panneau de configuration complet des tickets."""
     cfg  = get_ticket_cfg(ctx.guild.id)
     e    = ticket_settings_embed(ctx.guild, cfg)
     view = TicketSettingsView(ctx.guild)
