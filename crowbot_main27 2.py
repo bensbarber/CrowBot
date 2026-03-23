@@ -554,33 +554,102 @@ async def on_message_edit(before, after):
 
 @bot.event
 async def on_voice_state_update(member, before, after):
-    e = discord.Embed(timestamp=datetime.utcnow())
-    e.set_author(name=str(member), icon_url=member.display_avatar.url)
-    e.set_thumbnail(url=member.display_avatar.url)
+    channel_ref = after.channel or before.channel
+    now = discord.utils.utcnow()
+
+    # Connexion vocale
     if not before.channel and after.channel:
-        e.title = "🎙️ Connexion vocale"; e.color = 0x00ff00
-        e.add_field(name="👤 Membre", value=f"{member.mention} `({member.id})`", inline=True)
-        e.add_field(name="🔊 Salon",  value=after.channel.name, inline=True)
-    elif before.channel and not after.channel:
-        e.title = "🔇 Deconnexion vocale"; e.color = 0xff4500
-        e.add_field(name="👤 Membre", value=f"{member.mention} `({member.id})`", inline=True)
-        e.add_field(name="🔊 Salon",  value=before.channel.name, inline=True)
-    elif before.channel and after.channel and before.channel != after.channel:
-        e.title = "🔀 Changement vocal"; e.color = 0xffd700
-        e.add_field(name="👤 Membre", value=f"{member.mention} `({member.id})`", inline=True)
-        e.add_field(name="📤 De",     value=before.channel.name, inline=True)
-        e.add_field(name="📥 Vers",   value=after.channel.name, inline=True)
-    elif before.self_mute != after.self_mute:
-        e.title = "🔕 Micro" + (" coupe" if after.self_mute else " reactive"); e.color = 0xaaaaaa
-        e.add_field(name="👤 Membre", value=f"{member.mention}", inline=True)
-        if before.channel: e.add_field(name="🔊 Salon", value=before.channel.name, inline=True)
-    elif before.self_deaf != after.self_deaf:
-        e.title = "🔈 Son" + (" coupe" if after.self_deaf else " reactive"); e.color = 0xaaaaaa
-        e.add_field(name="👤 Membre", value=f"{member.mention}", inline=True)
-        if before.channel: e.add_field(name="🔊 Salon", value=before.channel.name, inline=True)
-    else: return
-    e.set_footer(text=f"ID : {member.id}")
-    await send_log(member.guild, "voicelog", e)
+        e = discord.Embed(title="Connexion vocale", color=0x00ff00, timestamp=now)
+        e.set_author(name=str(member), icon_url=member.display_avatar.url)
+        e.set_thumbnail(url=member.display_avatar.url)
+        e.add_field(name="Membre", value=f"{member.mention} `({member.id})`", inline=True)
+        e.add_field(name="Salon",  value=after.channel.name, inline=True)
+        e.add_field(name="Heure",  value=f"<t:{int(now.timestamp())}:T>", inline=True)
+        e.set_footer(text=f"ID : {member.id}")
+        await send_log(member.guild, "voicelog", e)
+        return
+
+    # Deconnexion vocale
+    if before.channel and not after.channel:
+        e = discord.Embed(title="Deconnexion vocale", color=0xff4500, timestamp=now)
+        e.set_author(name=str(member), icon_url=member.display_avatar.url)
+        e.set_thumbnail(url=member.display_avatar.url)
+        e.add_field(name="Membre", value=f"{member.mention} `({member.id})`", inline=True)
+        e.add_field(name="Salon",  value=before.channel.name, inline=True)
+        e.add_field(name="Heure",  value=f"<t:{int(now.timestamp())}:T>", inline=True)
+        e.set_footer(text=f"ID : {member.id}")
+        await send_log(member.guild, "voicelog", e)
+        return
+
+    # Changement de salon vocal
+    if before.channel and after.channel and before.channel != after.channel:
+        e = discord.Embed(title="Changement vocal", color=0xffd700, timestamp=now)
+        e.set_author(name=str(member), icon_url=member.display_avatar.url)
+        e.set_thumbnail(url=member.display_avatar.url)
+        e.add_field(name="Membre", value=f"{member.mention} `({member.id})`", inline=True)
+        e.add_field(name="De",     value=before.channel.name, inline=True)
+        e.add_field(name="Vers",   value=after.channel.name, inline=True)
+        e.set_footer(text=f"ID : {member.id}")
+        await send_log(member.guild, "voicelog", e)
+        return
+
+    # Micro coupe/active (self_mute)
+    if before.self_mute != after.self_mute:
+        statut = "coupé" if after.self_mute else "activé"
+        e = discord.Embed(title=f"Micro {statut}", color=0xaaaaaa, timestamp=now)
+        e.set_author(name=str(member), icon_url=member.display_avatar.url)
+        e.set_thumbnail(url=member.display_avatar.url)
+        e.add_field(name="Membre", value=f"{member.mention} `({member.id})`", inline=True)
+        e.add_field(name="Statut", value=f"{'🔇 Micro coupé' if after.self_mute else '🎙️ Micro activé'}", inline=True)
+        if channel_ref: e.add_field(name="Salon", value=channel_ref.name, inline=True)
+        e.set_footer(text=f"ID : {member.id}")
+        await send_log(member.guild, "voicelog", e)
+
+    # Casque coupe/active (self_deaf)
+    if before.self_deaf != after.self_deaf:
+        statut = "coupé" if after.self_deaf else "activé"
+        e = discord.Embed(title=f"Son {statut}", color=0xaaaaaa, timestamp=now)
+        e.set_author(name=str(member), icon_url=member.display_avatar.url)
+        e.set_thumbnail(url=member.display_avatar.url)
+        e.add_field(name="Membre", value=f"{member.mention} `({member.id})`", inline=True)
+        e.add_field(name="Statut", value=f"{'🔕 Son coupé (casque)' if after.self_deaf else '🔊 Son activé (casque)'}", inline=True)
+        if channel_ref: e.add_field(name="Salon", value=channel_ref.name, inline=True)
+        e.set_footer(text=f"ID : {member.id}")
+        await send_log(member.guild, "voicelog", e)
+
+    # Mute forcé par un modérateur
+    if before.mute != after.mute:
+        statut = "muté" if after.mute else "démuté"
+        e = discord.Embed(title=f"Membre {statut} (vocal)", color=0xff8c00, timestamp=now)
+        e.set_author(name=str(member), icon_url=member.display_avatar.url)
+        e.set_thumbnail(url=member.display_avatar.url)
+        e.add_field(name="Membre", value=f"{member.mention} `({member.id})`", inline=True)
+        e.add_field(name="Statut", value=f"{'🔇 Muté par un modérateur' if after.mute else '🔊 Démuté par un modérateur'}", inline=True)
+        if channel_ref: e.add_field(name="Salon", value=channel_ref.name, inline=True)
+        try:
+            async for entry in member.guild.audit_logs(limit=1, action=discord.AuditLogAction.member_update):
+                if (now - entry.created_at.replace(tzinfo=None) if entry.created_at.tzinfo is None else now - entry.created_at).total_seconds() < 3:
+                    e.add_field(name="Par", value=f"{entry.user.mention} `({entry.user})`", inline=True)
+        except: pass
+        e.set_footer(text=f"ID : {member.id}")
+        await send_log(member.guild, "voicelog", e)
+
+    # Deafen forcé par un modérateur
+    if before.deaf != after.deaf:
+        statut = "deafen" if after.deaf else "undeafen"
+        e = discord.Embed(title=f"Membre {statut} (vocal)", color=0xff8c00, timestamp=now)
+        e.set_author(name=str(member), icon_url=member.display_avatar.url)
+        e.set_thumbnail(url=member.display_avatar.url)
+        e.add_field(name="Membre", value=f"{member.mention} `({member.id})`", inline=True)
+        e.add_field(name="Statut", value=f"{'🔕 Son coupé par un modérateur' if after.deaf else '🔊 Son rétabli par un modérateur'}", inline=True)
+        if channel_ref: e.add_field(name="Salon", value=channel_ref.name, inline=True)
+        try:
+            async for entry in member.guild.audit_logs(limit=1, action=discord.AuditLogAction.member_update):
+                if (now - entry.created_at.replace(tzinfo=None) if entry.created_at.tzinfo is None else now - entry.created_at).total_seconds() < 3:
+                    e.add_field(name="Par", value=f"{entry.user.mention} `({entry.user})`", inline=True)
+        except: pass
+        e.set_footer(text=f"ID : {member.id}")
+        await send_log(member.guild, "voicelog", e)
 
 @bot.event
 async def on_member_update(before, after):
