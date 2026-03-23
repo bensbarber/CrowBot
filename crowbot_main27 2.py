@@ -341,7 +341,6 @@ MULTIWORD_CMDS = {
     "automod settings":    "automod",
     "réaction role":       "reactionrole",
     "sticky msg":          "stickymsg",
-    "create emoji":        "create_emoji",
     "création limit":      "creation_limit",
     "clear badwords":      "badwords",
     "boostembed test":     "boostembed",
@@ -977,6 +976,7 @@ def build_embeds(guild=None):
         ("+customlist / +clear customs", "Gestion des commandes custom"),
         ("+suggestion / +suggestion settings", "Système de suggestions"),
         ("+join settings / +leave settings", "Actions a l'arrivee/depart d'un membre"),
+        ("+create [emoji] <nom>", "Copie un ou plusieurs emojis sur ce serveur"),
     ]: e.add_field(name=f"**{cmd}**", value=desc, inline=False)
     e.set_footer(text=footer)
     embeds["gestion"] = e
@@ -997,7 +997,6 @@ def build_embeds(guild=None):
         ("+set perm <permission> <role>", "Donne une permission a un role"),
         ("+del perm <role>", "Supprimé les permissions d'un role"),
         ("+clear perms", "Supprimé toutes les permissions"),
-        ("+create emoji <nom> <lien>", "Cree un emoji custom"),
         ("+stickymsg off", "Supprime le message epingle"),
         ("+tempvoc", "Systeme de vocaux temporaires"),
         ("+antiraid settings", "Panneau antiraid avance (anti kick, ban, channel...)"),
@@ -3474,17 +3473,6 @@ async def server_banner(ctx):
     e = discord.Embed(color=get_color(ctx.guild.id)); e.set_image(url=ctx.guild.banner.url); e.set_footer(text=f"Banniere de {ctx.guild.name}")
     await ctx.send(embed=e)
 
-@bot.command(name="emoji")
-async def emoji_info(ctx, emoji: str):
-    try:
-        e_obj = await commands.EmojiConverter().convert(ctx, emoji)
-        e = discord.Embed(title=e_obj.name, color=get_color(ctx.guild.id))
-        e.add_field(name="ID",      value=str(e_obj.id))
-        e.add_field(name="Anime",   value="Oui" if e_obj.animated else "Non")
-        e.add_field(name="Serveur", value=e_obj.guild.name if e_obj.guild else "?")
-        e.set_image(url=str(e_obj.url))
-        await ctx.send(embed=e)
-    except: await ctx.send("Emoji introuvable ou emoji standard (non custom).")
 
 @bot.command(name="boosters")
 async def boosters(ctx):
@@ -3569,8 +3557,8 @@ async def image_search(ctx, *, query: str):
 
 @bot.command(name="pocoyo")
 async def pocoyo_cmd(ctx):
-    e = discord.Embed(title="Pocoyo - Support", color=get_color(ctx.guild.id))
-    e.description = "En cas d'erreur de commande ou problème, merci de contacter <@368607314439176193> afin qu'il puisse intervenir."
+    e = discord.Embed(title="Pocoyos - Support", color=get_color(ctx.guild.id))
+    e.description = "Rejoins le serveur de support Pocoyos pour de l'aide !"
     await ctx.send(embed=e)
 
 @bot.command(name="changelogs")
@@ -4272,20 +4260,6 @@ async def purge(ctx, target: str = "bots", amount: int = 100):
     try: await msg.delete()
     except: pass
 
-@bot.command(name="create_emoji")
-@commands.has_permissions(manage_emojis=True)
-async def create_emoji(ctx, name: str = None, url: str = None):
-    link = url or (ctx.message.attachments[0].url if ctx.message.attachments else None)
-    if not name or not link:
-        return await ctx.send("Usage : `+create emoji <nom> <lien>` ou joins une image avec `+create emoji <nom>`")
-    try:
-        async with aiohttp.ClientSession() as s:
-            async with s.get(link) as r:
-                data = await r.read()
-        emoji = await ctx.guild.create_custom_emoji(name=name, image=data)
-        await ctx.send(f"Emoji {emoji} créé : `:{name}:`")
-    except discord.HTTPException as ex:
-        await ctx.send(f"Erreur : {ex}")
 
 @bot.command(name="autoupdate")
 @commands.has_permissions(administrator=True)
@@ -5648,5 +5622,61 @@ async def warnlist(ctx):
     msg  = await ctx.send(embed=make_embed(0), view=view)
     view.message = msg
 
+
+
+@bot.command(name="create")
+@commands.has_permissions(manage_emojis=True)
+async def create_cmd(ctx, *args):
+    import re
+    emoji_pattern = re.compile(r"<(a?):(\w+):(\d+)>")
+    found = emoji_pattern.findall(ctx.message.content)
+
+    if not found:
+        e = discord.Embed(title="Copier des emojis", color=get_color(ctx.guild.id))
+        e.add_field(name="Usage", value=(
+            "`+create :emoji:` — Copie avec le nom original\n"
+            "`+create :emoji: nom` — Copie avec un nom personnalise\n"
+            "`+create :emoji1: :emoji2: :emoji3:` — Copie plusieurs emojis"
+        ), inline=False)
+        return await ctx.send(embed=e)
+
+    # Nom custom si un seul emoji + texte apres
+    custom_name = None
+    if len(found) == 1:
+        match = emoji_pattern.search(ctx.message.content)
+        after = ctx.message.content[match.end():].strip()
+        if after:
+            custom_name = re.sub(r"[^a-zA-Z0-9_]", "_", after)[:32] or None
+
+    msg = await ctx.send(f"Copie de **{len(found)}** emoji(s) en cours...")
+    success = []
+    errors  = []
+
+    for animated, name, emoji_id in found:
+        final_name = custom_name if (custom_name and len(found) == 1) else name
+        ext  = "gif" if animated else "png"
+        url  = f"https://cdn.discordapp.com/emojis/{emoji_id}.{ext}"
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.get(url) as r:
+                    data = await r.read()
+            new_emoji = await ctx.guild.create_custom_emoji(name=final_name, image=data)
+            success.append(str(new_emoji))
+        except discord.HTTPException as ex:
+            errors.append(f":{name}: — {ex}")
+        except Exception as ex:
+            errors.append(f":{name}: — Erreur")
+
+    e = discord.Embed(
+        title="Copie d'emojis",
+        color=0x00ff00 if success else 0xff0000,
+        timestamp=datetime.utcnow()
+    )
+    if success:
+        e.add_field(name=f"Copies ({len(success)})", value=" ".join(success), inline=False)
+    if errors:
+        e.add_field(name=f"Echecs ({len(errors)})", value="\n".join(errors[:5]), inline=False)
+    e.set_footer(text=f"Par {ctx.author}")
+    await msg.edit(content=None, embed=e)
 
 bot.run(TOKEN)
