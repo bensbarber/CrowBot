@@ -1704,12 +1704,70 @@ async def settings(ctx):
 @commands.has_permissions(administrator=True)
 async def autoconfiglog(ctx):
     cfg   = get_guild("logs.json", ctx.guild.id)
-    names = {"modlog":"modlogs","messagelog":"msglogs","voicelog":"voclogs","rolelog":"rolelogs","boostlog":"boostlogs","raidlog":"raidlogs","joinlog":"joinlogs","leavelog":"leavelogs"}
-    cat   = await ctx.guild.create_category("Logs")
+    names = {"modlog":"📋 modlogs","messagelog":"💬 msglogs","voicelog":"🎙️ voclogs","rolelog":"🏷️ rolelogs","boostlog":"💎 boostlogs","raidlog":"🛡️ raidlogs","joinlog":"📥 joinlogs","leavelog":"📤 leavelogs"}
+
+    msg = await ctx.send("⚙️ Configuration des logs en cours...")
+
+    # 1. Supprimer l'ancienne categorie Logs et ses salons si elle existe
+    for cat in ctx.guild.categories:
+        if cat.name.lower() in ("logs", "📋 logs", "log"):
+            for ch in cat.channels:
+                try: await ch.delete(reason="Reconfiguration des logs")
+                except: pass
+            try: await cat.delete(reason="Reconfiguration des logs")
+            except: pass
+            break
+
+    # 2. Aussi supprimer les salons logs existants configures
+    for log_key in names.keys():
+        old_cid = cfg.get(log_key)
+        if old_cid:
+            old_ch = ctx.guild.get_channel(int(old_cid))
+            if old_ch:
+                try: await old_ch.delete(reason="Reconfiguration des logs")
+                except: pass
+
+    # 3. Permissions : visible uniquement par le bot et les admins
+    overwrites = {
+        ctx.guild.default_role: discord.PermissionOverwrite(
+            view_channel=False,
+            read_messages=False
+        ),
+        ctx.guild.me: discord.PermissionOverwrite(
+            view_channel=True,
+            send_messages=True,
+            read_messages=True,
+            embed_links=True,
+            attach_files=True,
+        ),
+    }
+    # Ajouter les roles admins
+    for role in ctx.guild.roles:
+        if role.permissions.administrator and role != ctx.guild.default_role:
+            overwrites[role] = discord.PermissionOverwrite(
+                view_channel=True,
+                read_messages=True,
+                send_messages=False
+            )
+
+    # 4. Creer la nouvelle categorie privee
+    cat_overwrites = {
+        ctx.guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        ctx.guild.me: discord.PermissionOverwrite(view_channel=True),
+    }
+    for role in ctx.guild.roles:
+        if role.permissions.administrator and role != ctx.guild.default_role:
+            cat_overwrites[role] = discord.PermissionOverwrite(view_channel=True)
+
+    cat = await ctx.guild.create_category("📋 Logs", overwrites=cat_overwrites)
+
+    # 5. Creer les salons
     for k, n in names.items():
-        ch = await ctx.guild.create_text_channel(n, category=cat); cfg[k] = str(ch.id)
+        ch       = await ctx.guild.create_text_channel(n, category=cat, overwrites=overwrites)
+        cfg[k]   = str(ch.id)
+
     set_guild("logs.json", ctx.guild.id, cfg)
-    await ctx.send("Tous les salons de logs créés et configurés !")
+    await msg.edit(content=f"✅ Catégorie **📋 Logs** créée avec **{len(names)}** salons privés ! Seuls toi et les administrateurs peuvent les voir.")
 
 @bot.command(name="nolog")
 @commands.has_permissions(administrator=True)
