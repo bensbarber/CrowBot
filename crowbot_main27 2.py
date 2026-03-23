@@ -394,7 +394,7 @@ MULTIWORD_CMDS = {
     "set boostembed":      "set_boostembed",
     "set perm":            "set_perm",
     "del perm":            "del_perm",
-    "ticket settings":     "ticket",
+    "ticket settings":     "ticket_settings",
     "reminder list":       "reminder_list",
     "custom transfer":     "custom_transfer",
     "backup list":         "backup_list",
@@ -2236,41 +2236,41 @@ async def embed_builder(ctx):
 
 def get_ticket_cfg(gid):
     cfg = get_guild("tickets.json", gid)
-    cfg.setdefault("category",        None)       # catégorie des tickets
-    cfg.setdefault("panel_channel",   None)       # salon ou envoyer le panel
-    cfg.setdefault("log_channel",     None)       # salon de logs tickets
-    cfg.setdefault("staff_roles",     [])         # roles staff
-    cfg.setdefault("required_roles",  [])         # roles requis pour ouvrir
-    cfg.setdefault("banned_roles",    [])         # roles interdits
-    cfg.setdefault("options",         [{"label":"Support","emoji":"🔧","description":"Besoin d'aide"},{"label":"Purchase","emoji":"🛒","description":"Questions achats"}])
-    cfg.setdefault("panel_type",      "selector") # selector | button
-    cfg.setdefault("claim_enabled",   True)
+    cfg.setdefault("category",        None)
+    cfg.setdefault("panel_channel",   None)
+    cfg.setdefault("log_channel",     None)
+    cfg.setdefault("staff_roles",     [])
+    cfg.setdefault("required_roles",  [])
+    cfg.setdefault("banned_roles",    [])
+    cfg.setdefault("options",         [])
+    cfg.setdefault("panel_type",      "selector")
+    cfg.setdefault("claim_enabled",   False)
     cfg.setdefault("autoclaim",       False)
-    cfg.setdefault("auto_delete",     True)
+    cfg.setdefault("auto_delete",     False)
     cfg.setdefault("max_per_user",    1)
-    cfg.setdefault("close_on_leave",  True)
-    cfg.setdefault("btn_claim",       True)
-    cfg.setdefault("btn_close",       True)
-    cfg.setdefault("btn_add",         False)      # bouton ajouter membre
-    cfg.setdefault("transcript_mp",   True)
+    cfg.setdefault("close_on_leave",  False)
+    cfg.setdefault("btn_claim",       False)
+    cfg.setdefault("btn_close",       False)
+    cfg.setdefault("btn_add",         False)
+    cfg.setdefault("transcript_mp",   False)
     cfg.setdefault("claim_lock",      False)
     cfg.setdefault("claim_hide",      False)
-    cfg.setdefault("auto_msg",        "")         # message auto dans ticket
-    cfg.setdefault("close_msg",       "")         # message avant fermeture
-    cfg.setdefault("panel_title",     "🎫 Ouvrir un ticket")
-    cfg.setdefault("panel_desc",      "Sélectionné le type de ticket ci-dessous.\nNotre equipe te repondra au plus vite.")
-    cfg.setdefault("panel_color",     "0x00bfff")
-    cfg.setdefault("ticket_title",    "{emoji} Ticket {option}")
-    cfg.setdefault("ticket_desc",     "Bonjour {member} !\nMerci d'avoir ouvert un ticket **{option}**.\nDecris ton probleme.")
-    cfg.setdefault("ticket_color",    "0x00bfff")
+    cfg.setdefault("auto_msg",        "")
+    cfg.setdefault("close_msg",       "")
+    cfg.setdefault("panel_title",     "")
+    cfg.setdefault("panel_desc",      "")
+    cfg.setdefault("panel_color",     "0x000000")
+    cfg.setdefault("ticket_title",    "")
+    cfg.setdefault("ticket_desc",     "")
+    cfg.setdefault("ticket_color",    "0x000000")
     cfg.setdefault("name_format",     "ticket-{username}")
-    cfg.setdefault("mention_staff",   False)      # mentionner le staff a l'ouverture
-    cfg.setdefault("dm_on_open",      False)      # MP a l'ouverture
-    cfg.setdefault("dm_on_close",     True)       # MP transcript a la fermeture
-    cfg.setdefault("numbering",       False)      # numérotation des tickets
-    cfg.setdefault("ticket_count",    0)          # compteur
-    cfg.setdefault("notify_open",     True)       # log ouverture
-    cfg.setdefault("notify_close",    True)       # log fermeture
+    cfg.setdefault("mention_staff",   False)
+    cfg.setdefault("dm_on_open",      False)
+    cfg.setdefault("dm_on_close",     False)
+    cfg.setdefault("numbering",       False)
+    cfg.setdefault("ticket_count",    0)
+    cfg.setdefault("notify_open",     False)
+    cfg.setdefault("notify_close",    False)
     return cfg
 
 def save_ticket_cfg(gid, cfg):
@@ -2977,9 +2977,9 @@ class TicketSettingsView(discord.ui.View):
             if self.message: await self.message.edit(view=self)
         except: pass
 
-@bot.command(name="ticket")
+@bot.command(name="ticket_settings")
 @commands.has_permissions(administrator=True)
-async def ticket_cmd(ctx):
+async def ticket_settings_cmd(ctx):
     """Une seule commande : ouvre le panneau de configuration complet des tickets."""
     cfg  = get_ticket_cfg(ctx.guild.id)
     e    = ticket_settings_embed(ctx.guild, cfg)
