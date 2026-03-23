@@ -72,32 +72,85 @@ async def add_sanction(gid, mid, stype, reason, mod):
     s.setdefault("list", []).append({"type": stype, "reason": reason, "mod": str(mod), "date": datetime.utcnow().isoformat()})
     set_member("sanctions.json", gid, mid, s)
 
-ICONS = {
-    "warn":   "⚠️", "muté": "🔇", "tempmute": "🔇", "unmute": "🔊",
-    "kick":   "👢", "ban":  "🔨", "tempban":  "🔨", "unban":  "✅",
-    "cmute":  "🔕", "uncmute": "🔔",
-}
-COLORS = {
-    "warn":0xffd700,"muté":0xff8c00,"tempmute":0xff8c00,"unmute":0x00bfff,
-    "kick":0xff4500,"ban":0xff0000,"tempban":0xff0000,"unban":0x00ff00,
-    "cmute":0xff8c00,"uncmute":0x00bfff,
+LOG_CONFIG = {
+    "warn":      {"icon": "⚠️",  "color": 0xffd700, "label": "Avertissement",       "log": "modlog"},
+    "mute":      {"icon": "🔇",  "color": 0xff8c00, "label": "Mute",                 "log": "modlog"},
+    "mute":      {"icon": "🔇",  "color": 0xff8c00, "label": "Mute",                 "log": "modlog"},
+    "unmute":    {"icon": "🔊",  "color": 0x00bfff, "label": "Unmute",               "log": "modlog"},
+    "cmute":     {"icon": "🔕",  "color": 0xff8c00, "label": "Mute salon",           "log": "modlog"},
+    "uncmute":   {"icon": "🔔",  "color": 0x00bfff, "label": "Unmute salon",         "log": "modlog"},
+    "kick":      {"icon": "👢",  "color": 0xff4500, "label": "Expulsion",            "log": "modlog"},
+    "ban":       {"icon": "🔨",  "color": 0xff0000, "label": "Bannissement",         "log": "modlog"},
+    "unban":     {"icon": "✅",  "color": 0x00ff00, "label": "Debannissement",       "log": "modlog"},
+    "softban":   {"icon": "🔨",  "color": 0xff4500, "label": "Softban",              "log": "modlog"},
+    "timeout":   {"icon": "⏱️", "color": 0xff8c00, "label": "Timeout",              "log": "modlog"},
+    "untimeout": {"icon": "✅",  "color": 0x00bfff, "label": "Timeout leve",         "log": "modlog"},
+    "addrole":   {"icon": "🏷️", "color": 0x00bfff, "label": "Ajout de role",        "log": "modlog"},
+    "delrole":   {"icon": "🏷️", "color": 0xff8c00, "label": "Retrait de role",      "log": "modlog"},
+    "derank":    {"icon": "⬇️", "color": 0xff4500, "label": "Derank",               "log": "modlog"},
+    "clear":     {"icon": "🗑️", "color": 0x888888, "label": "Suppression messages", "log": "messagelog"},
+    "lock":      {"icon": "🔒",  "color": 0xff4500, "label": "Verrouillage salon",   "log": "modlog"},
+    "unlock":    {"icon": "🔓",  "color": 0x00ff00, "label": "Deverrouillage salon", "log": "modlog"},
+    "hide":      {"icon": "🙈",  "color": 0xff8c00, "label": "Salon cache",          "log": "modlog"},
+    "unhide":    {"icon": "👁️", "color": 0x00bfff, "label": "Salon affiche",        "log": "modlog"},
+    "renew":     {"icon": "♻️",  "color": 0x888888, "label": "Salon recree",         "log": "modlog"},
+    "slowmode":  {"icon": "🐢",  "color": 0x888888, "label": "Slowmode",             "log": "modlog"},
+    "massban":   {"icon": "🔨",  "color": 0xff0000, "label": "Massban",              "log": "modlog"},
+    "unhoist":   {"icon": "✂️",  "color": 0x888888, "label": "Unhoist",              "log": "modlog"},
 }
 
-async def log_mod(guild, action, member, mod, reason="Aucune raison"):
-    icon  = ICONS.get(action, "🔧")
-    color = COLORS.get(action, 0x888888)
-    e = discord.Embed(
-        title=f"{icon} {action.upper()}",
-        color=color,
-        timestamp=datetime.utcnow()
+async def log_mod(guild, action, member, mod, reason="Aucune raison", extra=None):
+    cfg_action = LOG_CONFIG.get(action, {"icon": "🔧", "color": 0x888888, "label": action.upper(), "log": "modlog"})
+    icon       = cfg_action["icon"]
+    color      = cfg_action["color"]
+    label      = cfg_action["label"]
+    log_type   = cfg_action["log"]
+
+    now  = discord.utils.utcnow()
+    ts   = f"<t:{int(now.timestamp())}:T>"
+    date = f"<t:{int(now.timestamp())}:F>"
+
+    e = discord.Embed(color=color, timestamp=now)
+    e.set_author(
+        name=f"{icon} {label}",
+        icon_url=member.display_avatar.url if hasattr(member, "display_avatar") else None
     )
-    e.set_author(name=str(mod), icon_url=mod.display_avatar.url if hasattr(mod, "display_avatar") else discord.Embed.Empty)
-    e.set_thumbnail(url=member.display_avatar.url)
-    e.add_field(name="👤 Membre",      value=f"{member.mention} ({member.id})", inline=True)
-    e.add_field(name="🛡️ Moderateur", value=f"{mod.mention} ({mod})", inline=True)
-    e.add_field(name="📋 Raison",      value=reason, inline=False)
-    e.set_footer(text=f"ID membre : {member.id}")
-    await send_log(guild, "modlog", e)
+
+    # Thumbnail = avatar du membre sanctionne
+    if hasattr(member, "display_avatar"):
+        e.set_thumbnail(url=member.display_avatar.url)
+
+    # Champs principaux
+    e.add_field(name="👤 Membre",      value=f"{member.mention}\n`{member}` • `{member.id}`", inline=True)
+    e.add_field(name="🛡️ Modérateur", value=f"{mod.mention}\n`{mod}`", inline=True)
+    e.add_field(name="⏰ Heure",        value=ts, inline=True)
+
+    # Raison
+    if reason and reason != "Aucune raison":
+        e.add_field(name="📋 Raison", value=reason, inline=False)
+
+    # Champs supplementaires selon l'action
+    if extra:
+        for k, v in extra.items():
+            e.add_field(name=k, value=str(v), inline=True)
+
+    # Compteur de sanctions
+    try:
+        sanctions = get_member("sanctions.json", guild.id, member.id).get("list", [])
+        total     = len(sanctions)
+        warns     = len([s for s in sanctions if s["type"] == "warn"])
+        mutes     = len([s for s in sanctions if s["type"] in ("mute", "mute")])
+        bans      = len([s for s in sanctions if s["type"] in ("ban", "softban")])
+        e.add_field(
+            name="📊 Historique",
+            value=f"Total : `{total}` | ⚠️ `{warns}` | 🔇 `{mutes}` | 🔨 `{bans}`",
+            inline=False
+        )
+    except: pass
+
+    e.set_footer(text=f"ID membre : {member.id} • ID modérateur : {mod.id}")
+    await send_log(guild, log_type, e)
+
 
 async def get_mute_role(guild):
     cfg = get_guild("modconfig.json", guild.id)
@@ -431,17 +484,30 @@ async def on_message(message):
 async def on_message_delete(message):
     if message.author.bot or not message.guild: return
     snipe_cache[message.channel.id] = message
-    e = discord.Embed(title="🗑️ Message supprimé", color=0xff4500, timestamp=datetime.utcnow())
+    now = discord.utils.utcnow()
+    e = discord.Embed(title="🗑️ Message supprimé", color=0xff4500, timestamp=now)
     e.set_author(name=str(message.author), icon_url=message.author.display_avatar.url)
     e.set_thumbnail(url=message.author.display_avatar.url)
-    e.add_field(name="👤 Auteur",  value=f"{message.author.mention} `({message.author.id})`", inline=True)
-    e.add_field(name="📌 Salon",   value=message.channel.mention, inline=True)
-    e.add_field(name="🕐 Envoyé le", value=message.created_at.strftime("%d/%m/%Y a %H:%M:%S"), inline=True)
+    e.add_field(name="👤 Auteur",    value=f"{message.author.mention}\n`{message.author}` • `{message.author.id}`", inline=True)
+    e.add_field(name="📌 Salon",     value=f"{message.channel.mention}\n`#{message.channel.name}`", inline=True)
+    e.add_field(name="🕐 Envoyé",    value=f"<t:{int(message.created_at.timestamp())}:F>", inline=True)
     if message.content:
-        e.add_field(name="📝 Contenu", value=message.content[:1024], inline=False)
+        content_val = message.content[:1024] if len(message.content) <= 1024 else message.content[:1021] + "..."
+        e.add_field(name="📝 Contenu", value=content_val, inline=False)
+    else:
+        e.add_field(name="📝 Contenu", value="*Message sans texte*", inline=False)
     if message.attachments:
-        e.add_field(name="📎 Pieces jointes", value=", ".join(a.filename for a in message.attachments), inline=False)
-    e.set_footer(text=f"ID message : {message.id}")
+        e.add_field(name="📎 Pièces jointes", value="\n".join(f"[{a.filename}]({a.url})" for a in message.attachments[:5]), inline=False)
+    if message.embeds:
+        e.add_field(name="🖼️ Embeds", value=f"`{len(message.embeds)}` embed(s)", inline=True)
+    # Qui a supprimé via audit log
+    try:
+        async for entry in message.guild.audit_logs(limit=1, action=discord.AuditLogAction.message_delete):
+            if (now - entry.created_at.replace(tzinfo=None) if entry.created_at.tzinfo is None else now - entry.created_at).total_seconds() < 3:
+                if entry.target.id == message.author.id:
+                    e.add_field(name="🛡️ Supprimé par", value=f"{entry.user.mention} `({entry.user})`", inline=True)
+    except: pass
+    e.set_footer(text=f"ID message : {message.id} • ID auteur : {message.author.id}")
     await send_log(message.guild, "messagelog", e)
 
 @bot.event
@@ -493,13 +559,23 @@ async def on_member_update(before, after):
     if before.roles != after.roles:
         added   = [r for r in after.roles  if r not in before.roles]
         removed = [r for r in before.roles if r not in after.roles]
-        e = discord.Embed(title="🏷️ Roles mis à jour", color=get_color(before.guild.id), timestamp=datetime.utcnow())
+        now = discord.utils.utcnow()
+        color = 0x00bfff if added else 0xff8c00
+        title = ("✅ Rôle ajouté" if added else "❌ Rôle retiré") + (" & retiré" if added and removed else "")
+        e = discord.Embed(title=title, color=color, timestamp=now)
         e.set_author(name=str(before), icon_url=before.display_avatar.url)
         e.set_thumbnail(url=before.display_avatar.url)
-        e.add_field(name="👤 Membre", value=f"{before.mention} `({before.id})`", inline=False)
-        if added:   e.add_field(name="✅ Roles ajoutés",  value=" ".join(r.mention for r in added),   inline=True)
-        if removed: e.add_field(name="❌ Roles retirés",  value=" ".join(r.mention for r in removed), inline=True)
-        e.set_footer(text=f"ID : {before.id}")
+        e.add_field(name="👤 Membre",  value=f"{before.mention}\n`{before}` • `{before.id}`", inline=True)
+        if added:   e.add_field(name="✅ Rôle(s) ajouté(s)",  value="\n".join(r.mention for r in added),   inline=True)
+        if removed: e.add_field(name="❌ Rôle(s) retiré(s)",  value="\n".join(r.mention for r in removed), inline=True)
+        e.add_field(name="⏰ Heure", value=f"<t:{int(now.timestamp())}:T>", inline=True)
+        # Qui a modifié les rôles via audit log
+        try:
+            async for entry in before.guild.audit_logs(limit=1, action=discord.AuditLogAction.member_role_update):
+                if (now - entry.created_at.replace(tzinfo=None) if entry.created_at.tzinfo is None else now - entry.created_at).total_seconds() < 3:
+                    e.add_field(name="🛡️ Par", value=f"{entry.user.mention}\n`{entry.user}`", inline=True)
+        except: pass
+        e.set_footer(text=f"ID membre : {before.id}")
         await send_log(before.guild, "rolelog", e)
     if before.nick != after.nick:
         e = discord.Embed(title="✏️ Surnom modifié", color=get_color(before.guild.id), timestamp=datetime.utcnow())
@@ -976,7 +1052,6 @@ def build_embeds(guild=None):
         ("+customlist / +clear customs", "Gestion des commandes custom"),
         ("+suggestion / +suggestion settings", "Système de suggestions"),
         ("+join settings / +leave settings", "Actions a l'arrivee/depart d'un membre"),
-        ("+create [emoji] <nom>", "Copie un ou plusieurs emojis sur ce serveur"),
     ]: e.add_field(name=f"**{cmd}**", value=desc, inline=False)
     e.set_footer(text=footer)
     embeds["gestion"] = e
@@ -1003,6 +1078,7 @@ def build_embeds(guild=None):
         ("+automod", "Panneau de configuration de l'automod"),
         ("+color <hex>", "Apercu d'une couleur hex"),
         ("+set muterole", "Definit le role muet sur un role existant"),
+        ("+create [emoji] <nom>", "Copie un ou plusieurs emojis sur ce serveur"),
     ]: e.add_field(name=f"**{cmd}**", value=desc, inline=False)
     e.set_footer(text=footer)
     embeds["gestion2"] = e
@@ -5613,7 +5689,7 @@ async def timeout_cmd(ctx, member: discord.Member, duration: str, *, reason: str
         await member.timeout(until, reason=reason)
         await add_sanction(ctx.guild.id, member.id, "timeout", f"{duration} - {reason}", ctx.author.id)
         await ctx.send(f"{member.mention} a ete mis en timeout pour {duration}. Raison : {reason} (fin <t:{int(until.timestamp())}:R>)")
-        await log_mod(ctx.guild, "mute", member, ctx.author, f"Timeout {duration} - {reason}")
+        await log_mod(ctx.guild, "timeout", member, ctx.author, reason, extra={"⏱️ Durée": duration, "🕐 Fin": f"<t:{int(until.timestamp())}:R>"})
     except discord.Forbidden:
         await ctx.send("Je n'ai pas la permission de timeout ce membre.")
     except Exception as ex:
@@ -5638,7 +5714,7 @@ async def softban(ctx, member: discord.Member, *, reason: str = "Aucune raison")
         await ctx.guild.ban(member, reason=f"Softban par {ctx.author} - {reason}", delete_message_days=7)
         await ctx.guild.unban(member, reason="Softban - unban automatique")
         await ctx.send(f"{member} a ete softbanni (messages supprimes, peut revenir). Raison : {reason}")
-        await log_mod(ctx.guild, "ban", member, ctx.author, f"Softban - {reason}")
+        await log_mod(ctx.guild, "softban", member, ctx.author, reason, extra={"📝 Type": "Softban — peut revenir"})
     except discord.Forbidden:
         await ctx.send("Je n'ai pas la permission de bannir ce membre.")
     except Exception as ex:
