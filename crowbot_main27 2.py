@@ -880,6 +880,7 @@ def build_embeds(guild=None):
         ("+suggestion <message>", "Poste une suggestion sur le serveur"),
         ("+wiki <mot-cle>", "Recherche Wikipedia"),
         ("+calc <calcul>", "Resout des calculs ou des equations"),
+        ("+server pic", "Récupère l'icône du serveur"),
         ("+crowbots", "Invitation pour le serveur de support"),
         ("+avatar", "Photo de profil avec bouton navigateur"),
         ("+id", "Retourne l'ID de n'importe quoi"),
@@ -914,7 +915,6 @@ def build_embeds(guild=None):
         ("+reset server", "Réinitialisé les paramètres de ce serveur"),
         ("+resetall", "Réinitialisé tous les paramètres du bot"),
         ("+permchannel <membre>", "Coche toutes les permissions pour un membre"),
-        ("+server pic", "Récupère l'icône du serveur"),
     ]: e.add_field(name=f"**{cmd}**", value=desc, inline=False)
     e.set_footer(text=footer)
     embeds["controle"] = e
@@ -1084,6 +1084,7 @@ def build_embeds(guild=None):
         ("+renew [salon]", "Supprimé et recree un salon"),
         ("+permchannel <membre>", "Toutes les permissions pour un membre"),
         ("+warnlist", "Liste de tous les membres avec des avertissements"),
+        ("+clear sanctions @membre/all", "Supprime les sanctions d'un membre ou de tous"),
     ]: e.add_field(name=f"**{cmd}**", value=desc, inline=False)
     e.set_footer(text=footer)
     embeds["moderation"] = e
@@ -1353,15 +1354,60 @@ async def del_sanction(ctx, member: discord.Member, number: int):
 
 @bot.command(name="clear_sanctions")
 @commands.has_permissions(administrator=True)
-async def clear_sanctions(ctx, member: discord.Member):
-    set_member("sanctions.json", ctx.guild.id, member.id, {"list": []})
-    await ctx.send(f"Toutes les sanctions de **{member}** supprimées.")
+async def clear_sanctions(ctx, cible: str = None):
+    """Usage : +clear sanctions @membre  OU  +clear sanctions all"""
+    # Si pas d'argument, afficher l'aide
+    if not cible:
+        e = discord.Embed(title="Clear sanctions", color=get_color(ctx.guild.id))
+        e.add_field(name="Utilisation", value="`+clear sanctions @membre` — Supprime les sanctions d'un membre\n`+clear sanctions all` — Supprime toutes les sanctions du serveur", inline=False)
+        return await ctx.send(embed=e)
 
+    # Cas all
+    if cible.lower() == "all":
+        view = ClearSanctionsConfirmView(ctx, None)
+        await ctx.send(f"Confirmer la suppression de **toutes** les sanctions du serveur ?", view=view)
+        return
+
+    # Cas membre
+    try:
+        member = await commands.MemberConverter().convert(ctx, cible)
+    except:
+        return await ctx.send("Membre introuvable. Usage : `+clear sanctions @membre` ou `+clear sanctions all`")
+
+    view = ClearSanctionsConfirmView(ctx, member)
+    await ctx.send(f"Confirmer la suppression de toutes les sanctions de **{member}** ?", view=view)
+
+class ClearSanctionsConfirmView(discord.ui.View):
+    def __init__(self, ctx, member):
+        super().__init__(timeout=30)
+        self.ctx    = ctx
+        self.member = member
+
+    @discord.ui.button(label="Confirmer", style=discord.ButtonStyle.danger, emoji="✅")
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user != self.ctx.author:
+            return await interaction.response.send_message("Ce n'est pas ta commande.", ephemeral=True)
+        if self.member:
+            set_member("sanctions.json", self.ctx.guild.id, self.member.id, {"list": []})
+            await interaction.response.edit_message(content=f"Sanctions de **{self.member}** supprimées.", view=None)
+        else:
+            data = db_load("sanctions.json"); data[str(self.ctx.guild.id)] = {}; db_save("sanctions.json", data)
+            await interaction.response.edit_message(content="Toutes les sanctions du serveur supprimées.", view=None)
+        self.stop()
+
+    @discord.ui.button(label="Annuler", style=discord.ButtonStyle.secondary, emoji="❌")
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user != self.ctx.author:
+            return await interaction.response.send_message("Ce n'est pas ta commande.", ephemeral=True)
+        await interaction.response.edit_message(content="Annulé.", view=None)
+        self.stop()
+
+# Alias clear_all_sanctions pour la compatibilite
 @bot.command(name="clear_all_sanctions")
 @commands.has_permissions(administrator=True)
 async def clear_all_sanctions(ctx):
-    data = db_load("sanctions.json"); data[str(ctx.guild.id)] = {}; db_save("sanctions.json", data)
-    await ctx.send("Toutes les sanctions de tous les membres supprimées.")
+    view = ClearSanctionsConfirmView(ctx, None)
+    await ctx.send("Confirmer la suppression de **toutes** les sanctions du serveur ?", view=view)
 
 @bot.command(name="addrole")
 @commands.has_permissions(manage_roles=True)
