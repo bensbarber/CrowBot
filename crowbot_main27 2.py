@@ -727,19 +727,20 @@ async def on_member_join(member):
             ej.set_footer(text=f"ID : {member.id}")
             await ch.send(embed=ej)
     jset = get_guild("joinsettings.json", member.guild.id)
-    wcid = jset.get("channel")
-    if wcid:
-        wch = member.guild.get_channel(int(wcid))
+    if jset.get("enabled") and jset.get("channel"):
+        wch = member.guild.get_channel(int(jset["channel"]))
         if wch:
-            msg = jset.get("message", f"Bienvenue {member.mention} sur **{member.guild.name}** !")
-            msg = msg.replace("{member}", member.mention).replace("{server}", member.guild.name).replace("{count}", str(member.guild.member_count))
-            await wch.send(msg)
-    rid = jset.get("role")
-    if rid:
-        role = member.guild.get_role(int(rid))
-        if role:
-            try: await member.add_roles(role)
+            text, embed = build_join_leave_msg(jset, member)
+            try: await wch.send(content=text, embed=embed)
             except: pass
+    # Role auto 1
+    for rkey in ("role", "role2"):
+        rid = jset.get(rkey)
+        if rid:
+            role = member.guild.get_role(int(rid))
+            if role:
+                try: await member.add_roles(role)
+                except: pass
     cfg = get_guild("antiraid.json", member.guild.id)
     if cfg.get("antitoken"):
         limit = cfg.get("antitoken_limit",10); window = cfg.get("antitoken_window",10)
@@ -784,13 +785,12 @@ async def on_member_remove(member):
             el.set_footer(text=f"ID : {member.id}")
             await ch.send(embed=el)
     lset = get_guild("leavesettings.json", member.guild.id)
-    lcid = lset.get("channel")
-    if lcid:
-        lch = member.guild.get_channel(int(lcid))
+    if lset.get("enabled") and lset.get("channel"):
+        lch = member.guild.get_channel(int(lset["channel"]))
         if lch:
-            msg = lset.get("message", f"**{member}** a quitté le serveur.")
-            msg = msg.replace("{member}", str(member)).replace("{server}", member.guild.name)
-            await lch.send(msg)
+            text, embed = build_join_leave_msg(lset, member)
+            try: await lch.send(content=text, embed=embed)
+            except: pass
 
 #  LOGS ANTIRAID - SUPPRESSION/MODIFICATION SALONS, ROLES, SERVEUR
 
@@ -3362,18 +3362,299 @@ async def modmail_cmd(ctx, channel: discord.TextChannel = None):
         e.add_field(name="Salon", value=ch.mention if ch else "Non configuré")
         await ctx.send(embed=e)
 
+# ── Helpers join/leave ─────────────────────────────────────────
+VARS_JOIN = "{member} {member.id} {member.name} {server} {server.count} {count} {date}"
+VARS_LEAVE = "{member} {member.id} {member.name} {server} {server.count} {count} {date} {roles}"
+
+def resolve_vars(text, member):
+    guild = member.guild
+    roles = ", ".join(r.name for r in member.roles if not r.is_default()) or "Aucun"
+    return (text
+        .replace("{member}",        member.mention)
+        .replace("{member.id}",     str(member.id))
+        .replace("{member.name}",   str(member))
+        .replace("{server}",        guild.name)
+        .replace("{server.count}",  str(guild.member_count))
+        .replace("{count}",         str(guild.member_count))
+        .replace("{date}",          f"<t:{int(discord.utils.utcnow().timestamp())}:D>")
+        .replace("{roles}",         roles)
+    )
+
+def _join_embed(guild, cfg):
+    ch  = guild.get_channel(int(cfg["channel"])) if cfg.get("channel") else None
+    r   = guild.get_role(int(cfg["role"]))        if cfg.get("role")    else None
+    r2  = guild.get_role(int(cfg["role2"]))       if cfg.get("role2")   else None
+    e = discord.Embed(title="Paramètres d'arrivée", color=0x00ff00)
+    e.add_field(name="📌 Salon",        value=ch.mention if ch else "*Non configuré*",  inline=True)
+    e.add_field(name="🏷️ Rôle auto 1", value=r.mention  if r  else "*Non configuré*",  inline=True)
+    e.add_field(name="🏷️ Rôle auto 2", value=r2.mention if r2 else "*Non configuré*",  inline=True)
+    e.add_field(name="🔔 Actif",        value="✅" if cfg.get("enabled") else "❌",     inline=True)
+    e.add_field(name="🖼️ Embed",        value="✅" if cfg.get("use_embed") else "❌",   inline=True)
+    e.add_field(name="🎨 Couleur",      value=cfg.get("embed_color","*Non défini*"),    inline=True)
+    e.add_field(name="📝 Titre",        value=cfg.get("embed_title","*Non défini*") or "*Non défini*",   inline=True)
+    e.add_field(name="📄 Description",  value=cfg.get("embed_desc","*Non défini*") or "*Non défini*",    inline=True)
+    e.add_field(name="🖼️ Image",        value="✅" if cfg.get("embed_image") else "❌", inline=True)
+    msg = cfg.get("message","") or "*Non défini*"
+    e.add_field(name="💬 Message texte", value=msg[:200], inline=False)
+    e.add_field(name="📌 Variables disponibles",
+        value="`{member}` `{member.id}` `{member.name}` `{server}` `{server.count}` `{count}` `{date}`",
+        inline=False)
+    e.set_footer(text="Utilise les boutons pour tout configurer")
+    return e
+
+def _leave_embed(guild, cfg):
+    ch = guild.get_channel(int(cfg["channel"])) if cfg.get("channel") else None
+    e  = discord.Embed(title="Paramètres de départ", color=0xff4500)
+    e.add_field(name="📌 Salon",        value=ch.mention if ch else "*Non configuré*",  inline=True)
+    e.add_field(name="🔔 Actif",        value="✅" if cfg.get("enabled") else "❌",     inline=True)
+    e.add_field(name="🖼️ Embed",        value="✅" if cfg.get("use_embed") else "❌",   inline=True)
+    e.add_field(name="🎨 Couleur",      value=cfg.get("embed_color","*Non défini*"),    inline=True)
+    e.add_field(name="📝 Titre",        value=cfg.get("embed_title","*Non défini*") or "*Non défini*",   inline=True)
+    e.add_field(name="📄 Description",  value=cfg.get("embed_desc","*Non défini*") or "*Non défini*",    inline=True)
+    e.add_field(name="🖼️ Image",        value="✅" if cfg.get("embed_image") else "❌", inline=True)
+    msg = cfg.get("message","") or "*Non défini*"
+    e.add_field(name="💬 Message texte", value=msg[:200], inline=False)
+    e.add_field(name="📌 Variables disponibles",
+        value="`{member}` `{member.id}` `{member.name}` `{server}` `{server.count}` `{count}` `{date}` `{roles}`",
+        inline=False)
+    e.set_footer(text="Utilise les boutons pour tout configurer")
+    return e
+
+class JoinSettingsView(discord.ui.View):
+    def __init__(self, guild):
+        super().__init__(timeout=180)
+        self.guild   = guild
+        self.message = None
+
+    async def refresh(self, interaction):
+        cfg = get_guild("joinsettings.json", self.guild.id)
+        await interaction.response.edit_message(embed=_join_embed(self.guild, cfg), view=self)
+
+    @discord.ui.button(label="📌 Salon", style=discord.ButtonStyle.primary, row=0)
+    async def set_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        chans = interaction.guild.text_channels[:25]
+        sel   = discord.ui.Select(placeholder="Salon de bienvenue", options=[
+            discord.SelectOption(label=f"#{c.name}"[:25], value=str(c.id)) for c in chans
+        ])
+        async def cb(inter):
+            cfg = get_guild("joinsettings.json", self.guild.id)
+            cfg["channel"] = inter.data["values"][0]
+            set_guild("joinsettings.json", self.guild.id, cfg)
+            await inter.response.edit_message(embed=_join_embed(self.guild, cfg), view=self)
+        sel.callback = cb
+        v = discord.ui.View(timeout=60); v.add_item(sel)
+        await interaction.response.edit_message(view=v)
+
+    @discord.ui.button(label="🏷️ Rôle auto 1", style=discord.ButtonStyle.primary, row=0)
+    async def set_role(self, interaction: discord.Interaction, button: discord.ui.Button):
+        roles = [r for r in interaction.guild.roles if not r.is_default() and not r.managed and r.position < interaction.guild.me.top_role.position][:25]
+        sel   = discord.ui.Select(placeholder="Rôle attribué à l'arrivée", options=[
+            discord.SelectOption(label=r.name[:25], value=str(r.id)) for r in roles
+        ])
+        async def cb(inter):
+            cfg = get_guild("joinsettings.json", self.guild.id)
+            cfg["role"] = inter.data["values"][0]
+            set_guild("joinsettings.json", self.guild.id, cfg)
+            await inter.response.edit_message(embed=_join_embed(self.guild, cfg), view=self)
+        sel.callback = cb
+        v = discord.ui.View(timeout=60); v.add_item(sel)
+        await interaction.response.edit_message(view=v)
+
+    @discord.ui.button(label="🏷️ Rôle auto 2", style=discord.ButtonStyle.secondary, row=0)
+    async def set_role2(self, interaction: discord.Interaction, button: discord.ui.Button):
+        roles = [r for r in interaction.guild.roles if not r.is_default() and not r.managed and r.position < interaction.guild.me.top_role.position][:25]
+        sel   = discord.ui.Select(placeholder="2ème rôle attribué à l'arrivée", options=[
+            discord.SelectOption(label=r.name[:25], value=str(r.id)) for r in roles
+        ])
+        async def cb(inter):
+            cfg = get_guild("joinsettings.json", self.guild.id)
+            cfg["role2"] = inter.data["values"][0]
+            set_guild("joinsettings.json", self.guild.id, cfg)
+            await inter.response.edit_message(embed=_join_embed(self.guild, cfg), view=self)
+        sel.callback = cb
+        v = discord.ui.View(timeout=60); v.add_item(sel)
+        await interaction.response.edit_message(view=v)
+
+    @discord.ui.button(label="🔔 Activer/Désactiver", style=discord.ButtonStyle.secondary, row=0)
+    async def toggle(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cfg = get_guild("joinsettings.json", self.guild.id)
+        cfg["enabled"] = not cfg.get("enabled", False)
+        set_guild("joinsettings.json", self.guild.id, cfg)
+        await interaction.response.edit_message(embed=_join_embed(self.guild, cfg), view=self)
+
+    @discord.ui.button(label="💬 Message texte", style=discord.ButtonStyle.primary, row=1)
+    async def set_msg(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(JoinLeaveTextModal("joinsettings.json", self.guild, "message", "Message de bienvenue", self, _join_embed))
+
+    @discord.ui.button(label="📝 Titre embed", style=discord.ButtonStyle.primary, row=1)
+    async def set_title(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(JoinLeaveTextModal("joinsettings.json", self.guild, "embed_title", "Titre de l'embed", self, _join_embed))
+
+    @discord.ui.button(label="📄 Description embed", style=discord.ButtonStyle.primary, row=1)
+    async def set_desc(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(JoinLeaveTextModal("joinsettings.json", self.guild, "embed_desc", "Description de l'embed", self, _join_embed, paragraph=True))
+
+    @discord.ui.button(label="🎨 Couleur embed", style=discord.ButtonStyle.secondary, row=1)
+    async def set_color(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(JoinLeaveTextModal("joinsettings.json", self.guild, "embed_color", "Couleur hex (ex: 00ff00)", self, _join_embed, placeholder="00ff00"))
+
+    @discord.ui.button(label="🖼️ Embed on/off", style=discord.ButtonStyle.secondary, row=2)
+    async def toggle_embed(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cfg = get_guild("joinsettings.json", self.guild.id)
+        cfg["use_embed"] = not cfg.get("use_embed", False)
+        set_guild("joinsettings.json", self.guild.id, cfg)
+        await interaction.response.edit_message(embed=_join_embed(self.guild, cfg), view=self)
+
+    @discord.ui.button(label="🖼️ Image (avatar)", style=discord.ButtonStyle.secondary, row=2)
+    async def toggle_image(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cfg = get_guild("joinsettings.json", self.guild.id)
+        cfg["embed_image"] = not cfg.get("embed_image", False)
+        set_guild("joinsettings.json", self.guild.id, cfg)
+        await interaction.response.edit_message(embed=_join_embed(self.guild, cfg), view=self)
+
+    @discord.ui.button(label="👁️ Aperçu", style=discord.ButtonStyle.success, row=2)
+    async def preview(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cfg = get_guild("joinsettings.json", self.guild.id)
+        msg, embed = build_join_leave_msg(cfg, interaction.user)
+        await interaction.response.send_message(content=msg, embed=embed, ephemeral=True)
+
+    @discord.ui.button(label="🗑️ Reset", style=discord.ButtonStyle.danger, row=2)
+    async def reset(self, interaction: discord.Interaction, button: discord.ui.Button):
+        set_guild("joinsettings.json", self.guild.id, {})
+        cfg = get_guild("joinsettings.json", self.guild.id)
+        await interaction.response.edit_message(embed=_join_embed(self.guild, cfg), view=self)
+
+    async def on_timeout(self):
+        try:
+            for item in self.children: item.disabled = True
+            if self.message: await self.message.edit(view=self)
+        except: pass
+
+class LeaveSettingsView(discord.ui.View):
+    def __init__(self, guild):
+        super().__init__(timeout=180)
+        self.guild   = guild
+        self.message = None
+
+    @discord.ui.button(label="📌 Salon", style=discord.ButtonStyle.primary, row=0)
+    async def set_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        chans = interaction.guild.text_channels[:25]
+        sel   = discord.ui.Select(placeholder="Salon d'au revoir", options=[
+            discord.SelectOption(label=f"#{c.name}"[:25], value=str(c.id)) for c in chans
+        ])
+        async def cb(inter):
+            cfg = get_guild("leavesettings.json", self.guild.id)
+            cfg["channel"] = inter.data["values"][0]
+            set_guild("leavesettings.json", self.guild.id, cfg)
+            await inter.response.edit_message(embed=_leave_embed(self.guild, cfg), view=self)
+        sel.callback = cb
+        v = discord.ui.View(timeout=60); v.add_item(sel)
+        await interaction.response.edit_message(view=v)
+
+    @discord.ui.button(label="🔔 Activer/Désactiver", style=discord.ButtonStyle.secondary, row=0)
+    async def toggle(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cfg = get_guild("leavesettings.json", self.guild.id)
+        cfg["enabled"] = not cfg.get("enabled", False)
+        set_guild("leavesettings.json", self.guild.id, cfg)
+        await interaction.response.edit_message(embed=_leave_embed(self.guild, cfg), view=self)
+
+    @discord.ui.button(label="💬 Message texte", style=discord.ButtonStyle.primary, row=1)
+    async def set_msg(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(JoinLeaveTextModal("leavesettings.json", self.guild, "message", "Message de départ", self, _leave_embed))
+
+    @discord.ui.button(label="📝 Titre embed", style=discord.ButtonStyle.primary, row=1)
+    async def set_title(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(JoinLeaveTextModal("leavesettings.json", self.guild, "embed_title", "Titre de l'embed", self, _leave_embed))
+
+    @discord.ui.button(label="📄 Description embed", style=discord.ButtonStyle.primary, row=1)
+    async def set_desc(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(JoinLeaveTextModal("leavesettings.json", self.guild, "embed_desc", "Description de l'embed", self, _leave_embed, paragraph=True))
+
+    @discord.ui.button(label="🎨 Couleur embed", style=discord.ButtonStyle.secondary, row=1)
+    async def set_color(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(JoinLeaveTextModal("leavesettings.json", self.guild, "embed_color", "Couleur hex (ex: ff4500)", self, _leave_embed, placeholder="ff4500"))
+
+    @discord.ui.button(label="🖼️ Embed on/off", style=discord.ButtonStyle.secondary, row=2)
+    async def toggle_embed(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cfg = get_guild("leavesettings.json", self.guild.id)
+        cfg["use_embed"] = not cfg.get("use_embed", False)
+        set_guild("leavesettings.json", self.guild.id, cfg)
+        await interaction.response.edit_message(embed=_leave_embed(self.guild, cfg), view=self)
+
+    @discord.ui.button(label="🖼️ Image (avatar)", style=discord.ButtonStyle.secondary, row=2)
+    async def toggle_image(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cfg = get_guild("leavesettings.json", self.guild.id)
+        cfg["embed_image"] = not cfg.get("embed_image", False)
+        set_guild("leavesettings.json", self.guild.id, cfg)
+        await interaction.response.edit_message(embed=_leave_embed(self.guild, cfg), view=self)
+
+    @discord.ui.button(label="👁️ Aperçu", style=discord.ButtonStyle.success, row=2)
+    async def preview(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cfg = get_guild("leavesettings.json", self.guild.id)
+        msg, embed = build_join_leave_msg(cfg, interaction.user)
+        await interaction.response.send_message(content=msg, embed=embed, ephemeral=True)
+
+    @discord.ui.button(label="🗑️ Reset", style=discord.ButtonStyle.danger, row=2)
+    async def reset(self, interaction: discord.Interaction, button: discord.ui.Button):
+        set_guild("leavesettings.json", self.guild.id, {})
+        cfg = get_guild("leavesettings.json", self.guild.id)
+        await interaction.response.edit_message(embed=_leave_embed(self.guild, cfg), view=self)
+
+    async def on_timeout(self):
+        try:
+            for item in self.children: item.disabled = True
+            if self.message: await self.message.edit(view=self)
+        except: pass
+
+class JoinLeaveTextModal(discord.ui.Modal):
+    value = discord.ui.TextInput(label="Valeur", max_length=1000)
+    def __init__(self, db_file, guild, cfg_key, title, parent, embed_fn, paragraph=False, placeholder=""):
+        super().__init__(title=title[:45])
+        self.db_file  = db_file
+        self.guild    = guild
+        self.cfg_key  = cfg_key
+        self.parent   = parent
+        self.embed_fn = embed_fn
+        self.value.style       = discord.TextStyle.paragraph if paragraph else discord.TextStyle.short
+        self.value.placeholder = placeholder or f"Valeur pour {cfg_key}. Variables: {{member}} {{server}} {{count}}"
+        self.value.required    = False
+    async def on_submit(self, interaction: discord.Interaction):
+        cfg = get_guild(self.db_file, self.guild.id)
+        cfg[self.cfg_key] = str(self.value).strip()
+        set_guild(self.db_file, self.guild.id, cfg)
+        await interaction.response.edit_message(embed=self.embed_fn(self.guild, cfg), view=self.parent)
+
+def build_join_leave_msg(cfg, member):
+    """Construit le message/embed de bienvenue ou départ."""
+    text    = resolve_vars(cfg.get("message",""), member) if cfg.get("message") else None
+    embed   = None
+    if cfg.get("use_embed"):
+        try: color = int(cfg.get("embed_color","00ff00").replace("#","").replace("0x",""), 16)
+        except: color = 0x00ff00
+        title = resolve_vars(cfg.get("embed_title","") or "", member) or None
+        desc  = resolve_vars(cfg.get("embed_desc","")  or "", member) or None
+        embed = discord.Embed(title=title, description=desc, color=color)
+        if cfg.get("embed_image"):
+            embed.set_thumbnail(url=member.display_avatar.url)
+    return text, embed
+
 @bot.command(name="join_settings")
 @commands.has_permissions(administrator=True)
 async def join_settings(ctx):
-    cfg = get_guild("joinsettings.json", ctx.guild.id)
-    e   = discord.Embed(title="Paramètres d'arrivée", color=0x00ff00)
-    ch  = ctx.guild.get_channel(int(cfg["channel"])) if cfg.get("channel") else None
-    r   = ctx.guild.get_role(int(cfg["role"])) if cfg.get("role") else None
-    e.add_field(name="Salon de bienvenue", value=ch.mention if ch else "Non configuré")
-    e.add_field(name="Role auto",          value=r.mention if r else "Non configuré")
-    e.add_field(name="Message",            value=cfg.get("message","Non configuré"), inline=False)
-    e.add_field(name="Commandes", value="`+join_channel #salon`\n`+join_role @role`\n`+join_message <msg>`", inline=False)
-    await ctx.send(embed=e)
+    cfg  = get_guild("joinsettings.json", ctx.guild.id)
+    e    = _join_embed(ctx.guild, cfg)
+    view = JoinSettingsView(ctx.guild)
+    msg  = await ctx.send(embed=e, view=view)
+    view.message = msg
+
+@bot.command(name="leave_settings")
+@commands.has_permissions(administrator=True)
+async def leave_settings(ctx):
+    cfg  = get_guild("leavesettings.json", ctx.guild.id)
+    e    = _leave_embed(ctx.guild, cfg)
+    view = LeaveSettingsView(ctx.guild)
+    msg  = await ctx.send(embed=e, view=view)
+    view.message = msg
 
 @bot.command(name="join_channel")
 @commands.has_permissions(administrator=True)
@@ -3385,25 +3666,14 @@ async def join_channel(ctx, channel: discord.TextChannel):
 @commands.has_permissions(administrator=True)
 async def join_role(ctx, role: discord.Role):
     cfg = get_guild("joinsettings.json", ctx.guild.id); cfg["role"] = str(role.id)
-    set_guild("joinsettings.json", ctx.guild.id, cfg); await ctx.send(f"Role automatique a l'arrivée : **{role.name}**")
+    set_guild("joinsettings.json", ctx.guild.id, cfg); await ctx.send(f"Rôle auto à l'arrivée : **{role.name}**")
 
 @bot.command(name="join_message")
 @commands.has_permissions(administrator=True)
 async def join_message_cmd(ctx, *, message: str):
     cfg = get_guild("joinsettings.json", ctx.guild.id); cfg["message"] = message
     set_guild("joinsettings.json", ctx.guild.id, cfg)
-    await ctx.send("Message de bienvenue défini. Variables : `{member}`, `{server}`, `{count}`")
-
-@bot.command(name="leave_settings")
-@commands.has_permissions(administrator=True)
-async def leave_settings(ctx):
-    cfg = get_guild("leavesettings.json", ctx.guild.id)
-    e   = discord.Embed(title="Paramètres de départ", color=0xff0000)
-    ch  = ctx.guild.get_channel(int(cfg["channel"])) if cfg.get("channel") else None
-    e.add_field(name="Salon d'au revoir", value=ch.mention if ch else "Non configuré")
-    e.add_field(name="Message",           value=cfg.get("message","Non configuré"), inline=False)
-    e.add_field(name="Commandes", value="`+leave_channel #salon`\n`+leave_message <msg>`", inline=False)
-    await ctx.send(embed=e)
+    await ctx.send("Message défini.")
 
 @bot.command(name="leave_channel")
 @commands.has_permissions(administrator=True)
@@ -3415,7 +3685,7 @@ async def leave_channel(ctx, channel: discord.TextChannel):
 @commands.has_permissions(administrator=True)
 async def leave_message(ctx, *, message: str):
     cfg = get_guild("leavesettings.json", ctx.guild.id); cfg["message"] = message
-    set_guild("leavesettings.json", ctx.guild.id, cfg); await ctx.send("Message de départ défini.")
+    set_guild("leavesettings.json", ctx.guild.id, cfg); await ctx.send("Message défini.")
 
 @bot.command(name="boostembed")
 @commands.has_permissions(administrator=True)
