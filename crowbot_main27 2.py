@@ -123,7 +123,7 @@ async def do_punish(guild, member, ptype, reason):
 
 @bot.event
 async def on_ready():
-    print(f"CrowBot connecté : {bot.user} | Préfixe : {PREFIX} | Serveurs : {len(bot.guilds)}")
+    print(f"Pocoyo connecté : {bot.user} | Préfixe : {PREFIX} | Serveurs : {len(bot.guilds)}")
     await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="votre serveur"))
 
 class GuildJoinView(discord.ui.View):
@@ -274,7 +274,7 @@ def make_guild_join_embed(guild, joined=True):
     if joined:
         e.add_field(name="🌐 Total serveurs", value=f"Le bot est maintenant dans **{len(bot.guilds)}** serveurs.", inline=False)
 
-    e.set_footer(text=f"CrowBot • ID : {guild.id}")
+    e.set_footer(text=f"Pocoyo • ID : {guild.id}")
     return e
 
 @bot.event
@@ -852,7 +852,7 @@ async def on_command_error(ctx, error):
         print(f"Erreur : {error}")
 
 def build_embeds(guild=None):
-    footer = "CrowBot - Préfixe actuel : +"
+    footer = "Pocoyo - Préfixe actuel : +"
     note   = "*Les paramètres peuvent être des noms, des mentions, ou des IDs*"
     embeds = {}
 
@@ -880,8 +880,7 @@ def build_embeds(guild=None):
         ("+suggestion <message>", "Poste une suggestion sur le serveur"),
         ("+wiki <mot-cle>", "Recherche Wikipedia"),
         ("+calc <calcul>", "Resout des calculs ou des equations"),
-        ("+server pic", "Récupère l'icône du serveur"),
-        ("+crowbots", "Invitation pour le serveur de support"),
+        ("+pocoyo", "Invitation pour le serveur de support"),
         ("+avatar", "Photo de profil avec bouton navigateur"),
         ("+id", "Retourne l'ID de n'importe quoi"),
         ("+poll <question> <ch1> <ch2>", "Cree un sondage avec reactions"),
@@ -2002,7 +2001,7 @@ async def embed_builder(ctx):
             except: pass
     except asyncio.TimeoutError: return await ctx.send("Temps écoulé.")
     e = discord.Embed(title=title, description=desc, color=color)
-    e.set_footer(text=f"CrowBot - {ctx.guild.name}")
+    e.set_footer(text=f"Pocoyo - {ctx.guild.name}")
     await ctx.send(embed=e)
 
 def get_ticket_cfg(gid):
@@ -2172,7 +2171,7 @@ async def open_ticket(guild, member, option):
     e.add_field(name="📂 Catégorie",  value=opt_label, inline=True)
     if cfg.get("numbering"):
         e.add_field(name="🔢 Numéro", value=f"#{count}", inline=True)
-    e.set_footer(text="CrowBot - Système de tickets")
+    e.set_footer(text="Pocoyo - Système de tickets")
 
     view = TicketControlView(guild.id)
     await ch.send(embed=e, view=view)
@@ -2729,7 +2728,7 @@ class TicketSettingsView(discord.ui.View):
                 try: color = int(cfg2.get("panel_color","0x00bfff").replace("0x",""), 16)
                 except: color = 0x00bfff
                 pe = discord.Embed(title=cfg2.get("panel_title","🎫 Ouvrir un ticket"), description=cfg2.get("panel_desc","Selectionnez un type de ticket."), color=color)
-                pe.set_footer(text="CrowBot - Système de tickets")
+                pe.set_footer(text="Pocoyo - Système de tickets")
                 pview = TicketButtonView(self.guild_id) if cfg2.get("panel_type") == "button" else TicketSelectView(self.guild_id)
                 await ch.send(embed=pe, view=pview)
                 await inter.response.edit_message(embed=ticket_settings_embed(inter.guild, cfg2), view=parent)
@@ -2758,7 +2757,7 @@ async def ticket(ctx):
         description=cfg.get("panel_desc","Sélectionné le type de ticket ci-dessous.\nNotre equipe te repondra au plus vite."),
         color=color
     )
-    e.set_footer(text="CrowBot - Système de tickets")
+    e.set_footer(text="Pocoyo - Système de tickets")
     pview = TicketButtonView(ctx.guild.id) if cfg.get("panel_type") == "button" else TicketSelectView(ctx.guild.id)
     await ctx.send(embed=e, view=pview)
 
@@ -3100,7 +3099,7 @@ async def suggestion(ctx, *, message: str):
     channel = ctx.guild.get_channel(int(cfg["channel"])) if cfg.get("channel") else ctx.channel
     e = discord.Embed(title="Nouvelle suggestion", description=message, color=get_color(ctx.guild.id), timestamp=datetime.utcnow())
     e.set_author(name=str(ctx.author), icon_url=ctx.author.display_avatar.url)
-    e.set_footer(text="CrowBot - Préfixe actuel : +")
+    e.set_footer(text="Pocoyo - Préfixe actuel : +")
     msg = await channel.send(embed=e)
     await msg.add_reaction("✅"); await msg.add_reaction("❌")
     if channel != ctx.channel:
@@ -3568,15 +3567,15 @@ async def image_search(ctx, *, query: str):
     e.description = f"[Rechercher sur Google Images](https://www.google.com/search?tbm=isch&q={query.replace(' ','+')})"
     await ctx.send(embed=e)
 
-@bot.command(name="crowbots")
-async def crowbots_cmd(ctx):
-    e = discord.Embed(title="CrowBots - Support", color=get_color(ctx.guild.id))
-    e.description = "Rejoins le serveur de support CrowBots pour de l'aide !"
+@bot.command(name="pocoyo")
+async def pocoyo_cmd(ctx):
+    e = discord.Embed(title="Pocoyos - Support", color=get_color(ctx.guild.id))
+    e.description = "Rejoins le serveur de support Pocoyos pour de l'aide !"
     await ctx.send(embed=e)
 
 @bot.command(name="changelogs")
 async def changelogs(ctx):
-    e = discord.Embed(title="Changelogs CrowBot", color=get_color(ctx.guild.id))
+    e = discord.Embed(title="Changelogs Pocoyo", color=get_color(ctx.guild.id))
     e.description = "**v2.0** - Version complete\n- Moderation complete\n- Logs\n- Antiraid\n- Gestion serveur\n- Utilitaire\n- Controle du bot"
     await ctx.send(embed=e)
 
@@ -3698,7 +3697,7 @@ async def compet_cmd(ctx, *, message: str):
 @bot.command(name="stream")
 @commands.is_owner()
 async def stream_cmd(ctx, *, message: str):
-    await bot.change_presence(activity=discord.Streaming(name=message, url="https://twitch.tv/crowbot"))
+    await bot.change_presence(activity=discord.Streaming(name=message, url="https://twitch.tv/pocoyo"))
     await ctx.send(f"Activité : Stream **{message}**.")
 
 @bot.command(name="mp")
