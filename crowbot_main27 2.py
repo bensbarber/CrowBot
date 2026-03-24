@@ -53,9 +53,10 @@ def parse_dur(s):
     if not m: return None
     return timedelta(seconds=int(m[1]) * {"s":1,"m":60,"h":3600,"d":86400}[m[2]])
 
-spam_cache  = defaultdict(lambda: defaultdict(list))
-join_cache  = defaultdict(list)
-snipe_cache = {}
+spam_cache   = defaultdict(lambda: defaultdict(list))
+join_cache   = defaultdict(list)
+snipe_cache  = {}
+invite_cache = {}  # guild_id -> {code: uses}
 
 async def send_log(guild, log_type, embed):
     try:
@@ -204,6 +205,12 @@ async def do_punish(guild, member, ptype, reason, cfg=None):
 async def on_ready():
     print(f"Pocoyo connecté : {bot.user} | Préfixe : {PREFIX} | Serveurs : {len(bot.guilds)}")
     await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="votre serveur"))
+    # Charger le cache d'invitations
+    for guild in bot.guilds:
+        try:
+            invites = await guild.invites()
+            invite_cache[guild.id] = {inv.code: inv.uses for inv in invites}
+        except: pass
 
 class GuildJoinView(discord.ui.View):
     def __init__(self, guild):
@@ -694,10 +701,42 @@ async def on_member_update(before, after):
         await send_log(before.guild, "boostlog", e)
 
 @bot.event
+async def on_invite_create(invite):
+    try:
+        invites = await invite.guild.invites()
+        invite_cache[invite.guild.id] = {inv.code: inv.uses for inv in invites}
+    except: pass
+
+@bot.event
+async def on_invite_delete(invite):
+    try:
+        invites = await invite.guild.invites()
+        invite_cache[invite.guild.id] = {inv.code: inv.uses for inv in invites}
+    except: pass
+
+async def get_invite_used(guild):
+    """Compare le cache avant/apres pour trouver l'invitation utilisée."""
+    try:
+        new_invites = await guild.invites()
+        old_uses    = invite_cache.get(guild.id, {})
+        used_invite = None
+        for inv in new_invites:
+            old_use_count = old_uses.get(inv.code, 0)
+            if inv.uses > old_use_count:
+                used_invite = inv
+                break
+        # Mettre a jour le cache
+        invite_cache[guild.id] = {inv.code: inv.uses for inv in new_invites}
+        return used_invite
+    except:
+        return None
+
+@bot.event
 async def on_member_join(member):
-    age_delta = datetime.utcnow() - member.created_at.replace(tzinfo=None)
-    age_str   = f"{age_delta.days} jours"
-    new_acct  = age_delta.days < 7
+    age_delta  = datetime.utcnow() - member.created_at.replace(tzinfo=None)
+    age_str    = f"{age_delta.days} jours"
+    new_acct   = age_delta.days < 7
+    used_inv   = await get_invite_used(member.guild)
     e = discord.Embed(
         title="📥 Membre rejoint",
         color=0xff4500 if new_acct else 0x00ff00,
@@ -710,27 +749,17 @@ async def on_member_join(member):
     e.add_field(name="👥 Membres",     value=str(member.guild.member_count), inline=True)
     if new_acct:
         e.add_field(name="⚠️ Compte recent", value="Ce compte a moins de 7 jours !", inline=False)
+    if used_inv:
+        inviter = used_inv.inviter
+        e.add_field(name="🔗 Invitation", value=f"`{used_inv.code}` — utilisée `{used_inv.uses}` fois", inline=True)
+        e.add_field(name="👤 Invité par", value=f"{inviter.mention} `({inviter})`" if inviter else "Inconnu", inline=True)
     e.set_footer(text=f"ID : {member.id}")
     await send_log(member.guild, "joinlog", e)
-    lcfg = get_guild("logs.json", member.guild.id)
-    cid  = lcfg.get("joinlog")
-    if cid:
-        ch = member.guild.get_channel(int(cid))
-        if ch:
-            ej = discord.Embed(title="📥 Nouveau membre", color=0xff4500 if new_acct else 0x00ff00, timestamp=datetime.utcnow())
-            ej.set_author(name=str(member), icon_url=member.display_avatar.url)
-            ej.set_thumbnail(url=member.display_avatar.url)
-            ej.add_field(name="👤 Membre",      value=f"{member.mention}\n`{member} ({member.id})`", inline=True)
-            ej.add_field(name="📅 Compte créé", value=f"{member.created_at.strftime('%d/%m/%Y')}\n`{age_str}`", inline=True)
-            ej.add_field(name="👥 Total",       value=str(member.guild.member_count), inline=True)
-            if new_acct: ej.add_field(name="⚠️ Compte recent", value="Moins de 7 jours !", inline=False)
-            ej.set_footer(text=f"ID : {member.id}")
-            await ch.send(embed=ej)
     jset = get_guild("joinsettings.json", member.guild.id)
     if jset.get("enabled") and jset.get("channel"):
         wch = member.guild.get_channel(int(jset["channel"]))
         if wch:
-            text, embed = build_join_leave_msg(jset, member)
+            text, embed = build_join_leave_msg(jset, member, used_inv)
             try: await wch.send(content=text, embed=embed)
             except: pass
     # Role auto 1
@@ -769,21 +798,7 @@ async def on_member_remove(member):
     e.add_field(name="👥 Membres",   value=str(member.guild.member_count), inline=True)
     if roles: e.add_field(name=f"🏷️ Roles ({len(roles)})", value=" ".join(roles[:10]), inline=False)
     e.set_footer(text=f"ID : {member.id}")
-    await send_log(member.guild, "joinlog", e)
-    lcfg = get_guild("logs.json", member.guild.id)
-    cid  = lcfg.get("leavelog")
-    if cid:
-        ch = member.guild.get_channel(int(cid))
-        if ch:
-            el = discord.Embed(title="📤 Membre parti", color=0xff0000, timestamp=datetime.utcnow())
-            el.set_author(name=str(member), icon_url=member.display_avatar.url)
-            el.set_thumbnail(url=member.display_avatar.url)
-            el.add_field(name="👤 Membre",    value=f"`{member} ({member.id})`", inline=True)
-            el.add_field(name="📅 A rejoint", value=member.joined_at.strftime("%d/%m/%Y") if member.joined_at else "?", inline=True)
-            el.add_field(name="👥 Membres",   value=str(member.guild.member_count), inline=True)
-            if roles: el.add_field(name=f"🏷️ Roles ({len(roles)})", value=" ".join(roles[:10]), inline=False)
-            el.set_footer(text=f"ID : {member.id}")
-            await ch.send(embed=el)
+    await send_log(member.guild, "leavelog", e)
     lset = get_guild("leavesettings.json", member.guild.id)
     if lset.get("enabled") and lset.get("channel"):
         lch = member.guild.get_channel(int(lset["channel"]))
@@ -1055,7 +1070,6 @@ def build_embeds(guild=None):
         ("+pocoyo", "Invitation pour le serveur de support"),
         ("+avatar", "Photo de profil avec bouton navigateur"),
         ("+id", "Retourne l'ID de n'importe quoi"),
-        ("+poll <question> <ch1> <ch2>", "Cree un sondage avec reactions"),
     ]: e.add_field(name=f"**{cmd}**", value=desc, inline=False)
     e.set_footer(text=footer)
     embeds["utilitaire"] = e
@@ -1126,7 +1140,6 @@ def build_embeds(guild=None):
     for cmd, desc in [
         ("+giveaway", "Créé un giveaway interactif"),
         ("+end giveaway <ID> / +reroll", "Terminé ou rejoue un giveaway"),
-        ("+choose <ID>", "Tirage au sort sur un message"),
         ("+embed", "Generateur d'embed interactif"),
         ("+backup <serveur/emoji> [nom]", "Créé une backup du serveur ou emojis"),
         ("+backup list/delete/load", "Gestion des backups"),
@@ -1157,13 +1170,9 @@ def build_embeds(guild=None):
     for cmd, desc in [
         ("+boostembed <on/off/test>", "Embeds de boost"),
         ("+set boostembed", "Configuré l'embed de boost"),
-        ("+autopublish <on/off>", "Publication automatique des annonces"),
         ("+autodelete <cible> <on/off/duree>", "Suppression automatique"),
         ("+piconly <add/del> [salon]", "Salon photos uniquement"),
         ("+restrict / +unrestrict <emoji>", "Restreindre un emoji a un role"),
-        ("+report settings", "Configuré les reports"),
-        ("+modmail", "Configuré les modmails"),
-        ("+openmodmail <membre>", "Ouvre un modmail manuellement"),
         ("+public <on/off>", "Commandes publiques"),
         ("+set perm <permission> <role>", "Donne une permission a un role"),
         ("+del perm <role>", "Supprimé les permissions d'un role"),
@@ -2198,40 +2207,162 @@ async def reroll(ctx):
         await ctx.send(f"Nouveau tirage ! Gagnant : {random.choice(participants).mention} !")
     except Exception as ex: await ctx.send(f"Erreur : {ex}")
 
-@bot.command(name="choose")
-@commands.has_permissions(manage_guild=True)
-async def choose_cmd(ctx, message_id: int = None):
-    if not message_id: return await ctx.send("Usage : `+choose <ID du message>`")
-    try:
-        msg          = await ctx.channel.fetch_message(message_id)
-        if not msg.réactions: return await ctx.send("Aucune réaction sur ce message.")
-        réaction     = msg.reactions[0]
-        participants = [u async for u in réaction.users() if not u.bot]
-        if not participants: return await ctx.send("Aucun participant.")
-        await ctx.send(f"Le gagnant est {random.choice(participants).mention} !")
-    except Exception as ex: await ctx.send(f"Erreur : {ex}")
 
 @bot.command(name="embed")
 @commands.has_permissions(manage_messages=True)
 async def embed_builder(ctx):
-    def check(m): return m.author == ctx.author and m.channel == ctx.channel
-    await ctx.send("**Generateur d'embed**\nTitre ? (ou `skip`)")
-    try:
-        title     = (await bot.wait_for("message", check=check, timeout=60)).content
-        title     = "" if title == "skip" else title
-        await ctx.send("Description ? (ou `skip`)")
-        desc      = (await bot.wait_for("message", check=check, timeout=60)).content
-        desc      = "" if desc == "skip" else desc
-        await ctx.send("Couleur hex ? ex: `#ff0000` (ou `skip`)")
-        color_str = (await bot.wait_for("message", check=check, timeout=60)).content
-        color     = 0x1a0a2e
-        if color_str != "skip":
-            try: color = int(color_str.replace("#",""), 16)
-            except: pass
-    except asyncio.TimeoutError: return await ctx.send("Temps écoulé.")
-    e = discord.Embed(title=title, description=desc, color=color)
-    e.set_footer(text=f"Pocoyo - {ctx.guild.name}")
-    await ctx.send(embed=e)
+    """Panneau de création d'embed 100% configurable."""
+    data = {
+        "title": "", "description": "", "color": "000000",
+        "footer": "", "author": "", "image": "", "thumbnail": "",
+        "fields": [], "channel": None
+    }
+    e    = _embed_preview(data, ctx.guild)
+    view = EmbedBuilderView(ctx, data)
+    msg  = await ctx.send(embed=e, view=view)
+    view.message = msg
+
+def _embed_preview(data, guild):
+    try: color = int(data.get("color","000000").replace("#","").replace("0x",""), 16)
+    except: color = 0x000000
+    e = discord.Embed(
+        title=data.get("title") or None,
+        description=data.get("description") or None,
+        color=color
+    )
+    if data.get("footer"):   e.set_footer(text=data["footer"])
+    if data.get("author"):   e.set_author(name=data["author"])
+    if data.get("image"):
+        try: e.set_image(url=data["image"])
+        except: pass
+    if data.get("thumbnail"):
+        try: e.set_thumbnail(url=data["thumbnail"])
+        except: pass
+    for field in data.get("fields", []):
+        e.add_field(name=field["name"], value=field["value"], inline=field.get("inline", False))
+    if not any([data.get("title"), data.get("description"), data.get("fields")]):
+        e.description = "*Configure ton embed avec les boutons ci-dessous*"
+    return e
+
+class EmbedBuilderView(discord.ui.View):
+    def __init__(self, ctx, data):
+        super().__init__(timeout=300)
+        self.ctx     = ctx
+        self.data    = data
+        self.message = None
+
+    async def refresh(self, interaction):
+        e = _embed_preview(self.data, interaction.guild)
+        await interaction.response.edit_message(embed=e, view=self)
+
+    @discord.ui.button(label="📝 Titre", style=discord.ButtonStyle.primary, row=0)
+    async def set_title(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(EmbedFieldModal("Titre", "title", self, max_length=256))
+
+    @discord.ui.button(label="📄 Description", style=discord.ButtonStyle.primary, row=0)
+    async def set_desc(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(EmbedFieldModal("Description", "description", self, paragraph=True))
+
+    @discord.ui.button(label="🎨 Couleur", style=discord.ButtonStyle.primary, row=0)
+    async def set_color(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(EmbedFieldModal("Couleur hex (ex: ff0000)", "color", self, max_length=7))
+
+    @discord.ui.button(label="📋 Footer", style=discord.ButtonStyle.secondary, row=0)
+    async def set_footer(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(EmbedFieldModal("Footer", "footer", self, max_length=200))
+
+    @discord.ui.button(label="👤 Auteur", style=discord.ButtonStyle.secondary, row=0)
+    async def set_author(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(EmbedFieldModal("Auteur", "author", self, max_length=100))
+
+    @discord.ui.button(label="🖼️ Image (URL)", style=discord.ButtonStyle.secondary, row=1)
+    async def set_image(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(EmbedFieldModal("URL de l'image", "image", self))
+
+    @discord.ui.button(label="🖼️ Thumbnail (URL)", style=discord.ButtonStyle.secondary, row=1)
+    async def set_thumbnail(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(EmbedFieldModal("URL du thumbnail", "thumbnail", self))
+
+    @discord.ui.button(label="➕ Ajouter un champ", style=discord.ButtonStyle.success, row=1)
+    async def add_field(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(EmbedAddFieldModal(self))
+
+    @discord.ui.button(label="➖ Supprimer un champ", style=discord.ButtonStyle.danger, row=1)
+    async def del_field(self, interaction: discord.Interaction, button: discord.ui.Button):
+        fields = self.data.get("fields", [])
+        if not fields:
+            return await interaction.response.send_message("Aucun champ à supprimer.", ephemeral=True)
+        sel = discord.ui.Select(
+            placeholder="Supprimer un champ",
+            options=[discord.SelectOption(label=f["name"][:25], value=str(i)) for i, f in enumerate(fields[:25])]
+        )
+        parent = self
+        async def del_cb(inter):
+            idx = int(inter.data["values"][0])
+            parent.data["fields"].pop(idx)
+            e = _embed_preview(parent.data, inter.guild)
+            await inter.response.edit_message(embed=e, view=parent)
+        sel.callback = del_cb
+        v = discord.ui.View(timeout=60); v.add_item(sel)
+        await interaction.response.edit_message(view=v)
+
+    @discord.ui.button(label="📤 Envoyer", style=discord.ButtonStyle.success, row=2)
+    async def send_embed(self, interaction: discord.Interaction, button: discord.ui.Button):
+        chans = interaction.guild.text_channels[:25]
+        sel   = discord.ui.Select(
+            placeholder="Dans quel salon envoyer ?",
+            options=[discord.SelectOption(label=f"#{c.name}"[:25], value=str(c.id)) for c in chans]
+        )
+        parent = self
+        async def send_cb(inter):
+            ch = inter.guild.get_channel(int(inter.data["values"][0]))
+            if not ch:
+                return await inter.response.send_message("Salon introuvable.", ephemeral=True)
+            e = _embed_preview(parent.data, inter.guild)
+            await ch.send(embed=e)
+            await inter.response.send_message(f"✅ Embed envoyé dans {ch.mention} !", ephemeral=True)
+        sel.callback = send_cb
+        v = discord.ui.View(timeout=60); v.add_item(sel)
+        await interaction.response.edit_message(view=v)
+
+    @discord.ui.button(label="🗑️ Reset", style=discord.ButtonStyle.danger, row=2)
+    async def reset_embed(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.data = {"title":"","description":"","color":"000000","footer":"","author":"","image":"","thumbnail":"","fields":[],"channel":None}
+        await self.refresh(interaction)
+
+    async def on_timeout(self):
+        try:
+            for item in self.children: item.disabled = True
+            if self.message: await self.message.edit(view=self)
+        except: pass
+
+class EmbedFieldModal(discord.ui.Modal):
+    value = discord.ui.TextInput(label="Valeur", max_length=1024)
+    def __init__(self, title, key, parent, paragraph=False, max_length=1024):
+        super().__init__(title=title[:45])
+        self.key    = key
+        self.parent = parent
+        self.value.style      = discord.TextStyle.paragraph if paragraph else discord.TextStyle.short
+        self.value.max_length = max_length
+        self.value.required   = False
+    async def on_submit(self, interaction: discord.Interaction):
+        self.parent.data[self.key] = str(self.value).strip()
+        await self.parent.refresh(interaction)
+
+class EmbedAddFieldModal(discord.ui.Modal, title="Ajouter un champ"):
+    name_   = discord.ui.TextInput(label="Nom du champ",   max_length=256)
+    value_  = discord.ui.TextInput(label="Valeur du champ", style=discord.TextStyle.paragraph, max_length=1024)
+    inline_ = discord.ui.TextInput(label="Inline ? (oui/non)", max_length=3, default="non")
+    def __init__(self, parent):
+        super().__init__()
+        self.parent = parent
+    async def on_submit(self, interaction: discord.Interaction):
+        self.parent.data.setdefault("fields", []).append({
+            "name":   str(self.name_),
+            "value":  str(self.value_),
+            "inline": str(self.inline_).lower() in ("oui","yes","true","1")
+        })
+        await self.parent.refresh(interaction)
 
 def get_ticket_cfg(gid):
     cfg = get_guild("tickets.json", gid)
@@ -3137,7 +3268,7 @@ async def temprole(ctx, member: discord.Member, role: discord.Role, duration: st
     if role in member.roles: await member.remove_roles(role)
 
 @bot.command(name="voicemove")
-@commands.has_permissions(move_members=True)
+@commands.has_permissions(administrator=True)
 async def voicemove(ctx, from_channel: discord.VoiceChannel, to_channel: discord.VoiceChannel):
     count = 0
     for m in from_channel.members:
@@ -3146,7 +3277,7 @@ async def voicemove(ctx, from_channel: discord.VoiceChannel, to_channel: discord
     await ctx.send(f"**{count}** membre(s) deplace(s) vers **{to_channel.name}**.")
 
 @bot.command(name="voicekick")
-@commands.has_permissions(move_members=True)
+@commands.has_permissions(administrator=True)
 async def voicekick(ctx, *members: discord.Member):
     count = 0
     for member in members:
@@ -3156,7 +3287,7 @@ async def voicekick(ctx, *members: discord.Member):
     await ctx.send(f"**{count}** membre(s) deconnecte(s) du vocal.")
 
 @bot.command(name="cleanup")
-@commands.has_permissions(move_members=True)
+@commands.has_permissions(administrator=True)
 async def cleanup_voice(ctx, channel: discord.VoiceChannel = None):
     if not channel: return await ctx.send("Precise un salon vocal.")
     count = len(channel.members)
@@ -3166,7 +3297,7 @@ async def cleanup_voice(ctx, channel: discord.VoiceChannel = None):
     await ctx.send(f"**{count}** membre(s) deconnecte(s) de **{channel.name}**.")
 
 @bot.command(name="bringall")
-@commands.has_permissions(move_members=True)
+@commands.has_permissions(administrator=True)
 async def bringall(ctx, channel: discord.VoiceChannel = None):
     if not ctx.author.voice and not channel: return await ctx.send("Tu dois etre dans un vocal ou préciser un salon.")
     target  = channel or ctx.author.voice.channel
@@ -3339,86 +3470,6 @@ async def suggestion_settings(ctx, channel: discord.TextChannel = None):
 async def lb_suggestions(ctx):
     await ctx.send("Le classement des suggestions est disponible dans le salon de suggestions configuré.")
 
-@bot.command(name="openmodmail")
-@commands.has_permissions(manage_guild=True)
-async def openmodmail(ctx, member: discord.Member):
-    cfg     = get_guild("modconfig.json", ctx.guild.id); cid = cfg.get("modmail_channel")
-    channel = ctx.guild.get_channel(int(cid)) if cid else None
-    if not channel: return await ctx.send("Aucun salon modmail configuré. Utilise `+modmail #salon`.")
-    e = discord.Embed(title="Ticket Modmail ouvert", color=0x00bfff, timestamp=datetime.utcnow())
-    e.add_field(name="Membre", value=f"{member.mention} ({member.id})"); await channel.send(embed=e)
-    await ctx.send(f"Modmail ouvert pour **{member}**.")
-
-@bot.command(name="modmail")
-@commands.has_permissions(administrator=True)
-async def modmail_cmd(ctx, channel: discord.TextChannel = None):
-    cfg = get_guild("modconfig.json", ctx.guild.id)
-    if channel:
-        cfg["modmail_channel"] = str(channel.id); set_guild("modconfig.json", ctx.guild.id, cfg)
-        await ctx.send(f"Modmail configuré dans {channel.mention}.")
-    else:
-        cid = cfg.get("modmail_channel"); ch = ctx.guild.get_channel(int(cid)) if cid else None
-        e   = discord.Embed(title="Modmail", color=get_color(ctx.guild.id))
-        e.add_field(name="Salon", value=ch.mention if ch else "Non configuré")
-        await ctx.send(embed=e)
-
-# ── Helpers join/leave ─────────────────────────────────────────
-VARS_JOIN = "{member} {member.id} {member.name} {server} {server.count} {count} {date}"
-VARS_LEAVE = "{member} {member.id} {member.name} {server} {server.count} {count} {date} {roles}"
-
-def resolve_vars(text, member):
-    guild = member.guild
-    roles = ", ".join(r.name for r in member.roles if not r.is_default()) or "Aucun"
-    return (text
-        .replace("{member}",        member.mention)
-        .replace("{member.id}",     str(member.id))
-        .replace("{member.name}",   str(member))
-        .replace("{server}",        guild.name)
-        .replace("{server.count}",  str(guild.member_count))
-        .replace("{count}",         str(guild.member_count))
-        .replace("{date}",          f"<t:{int(discord.utils.utcnow().timestamp())}:D>")
-        .replace("{roles}",         roles)
-    )
-
-def _join_embed(guild, cfg):
-    ch  = guild.get_channel(int(cfg["channel"])) if cfg.get("channel") else None
-    r   = guild.get_role(int(cfg["role"]))        if cfg.get("role")    else None
-    r2  = guild.get_role(int(cfg["role2"]))       if cfg.get("role2")   else None
-    e = discord.Embed(title="Paramètres d'arrivée", color=0x00ff00)
-    e.add_field(name="📌 Salon",        value=ch.mention if ch else "*Non configuré*",  inline=True)
-    e.add_field(name="🏷️ Rôle auto 1", value=r.mention  if r  else "*Non configuré*",  inline=True)
-    e.add_field(name="🏷️ Rôle auto 2", value=r2.mention if r2 else "*Non configuré*",  inline=True)
-    e.add_field(name="🔔 Actif",        value="✅" if cfg.get("enabled") else "❌",     inline=True)
-    e.add_field(name="🖼️ Embed",        value="✅" if cfg.get("use_embed") else "❌",   inline=True)
-    e.add_field(name="🎨 Couleur",      value=cfg.get("embed_color","*Non défini*"),    inline=True)
-    e.add_field(name="📝 Titre",        value=cfg.get("embed_title","*Non défini*") or "*Non défini*",   inline=True)
-    e.add_field(name="📄 Description",  value=cfg.get("embed_desc","*Non défini*") or "*Non défini*",    inline=True)
-    e.add_field(name="🖼️ Image",        value="✅" if cfg.get("embed_image") else "❌", inline=True)
-    msg = cfg.get("message","") or "*Non défini*"
-    e.add_field(name="💬 Message texte", value=msg[:200], inline=False)
-    e.add_field(name="📌 Variables disponibles",
-        value="`{member}` `{member.id}` `{member.name}` `{server}` `{server.count}` `{count}` `{date}`",
-        inline=False)
-    e.set_footer(text="Utilise les boutons pour tout configurer")
-    return e
-
-def _leave_embed(guild, cfg):
-    ch = guild.get_channel(int(cfg["channel"])) if cfg.get("channel") else None
-    e  = discord.Embed(title="Paramètres de départ", color=0xff4500)
-    e.add_field(name="📌 Salon",        value=ch.mention if ch else "*Non configuré*",  inline=True)
-    e.add_field(name="🔔 Actif",        value="✅" if cfg.get("enabled") else "❌",     inline=True)
-    e.add_field(name="🖼️ Embed",        value="✅" if cfg.get("use_embed") else "❌",   inline=True)
-    e.add_field(name="🎨 Couleur",      value=cfg.get("embed_color","*Non défini*"),    inline=True)
-    e.add_field(name="📝 Titre",        value=cfg.get("embed_title","*Non défini*") or "*Non défini*",   inline=True)
-    e.add_field(name="📄 Description",  value=cfg.get("embed_desc","*Non défini*") or "*Non défini*",    inline=True)
-    e.add_field(name="🖼️ Image",        value="✅" if cfg.get("embed_image") else "❌", inline=True)
-    msg = cfg.get("message","") or "*Non défini*"
-    e.add_field(name="💬 Message texte", value=msg[:200], inline=False)
-    e.add_field(name="📌 Variables disponibles",
-        value="`{member}` `{member.id}` `{member.name}` `{server}` `{server.count}` `{count}` `{date}` `{roles}`",
-        inline=False)
-    e.set_footer(text="Utilise les boutons pour tout configurer")
-    return e
 
 class JoinSettingsView(discord.ui.View):
     def __init__(self, guild):
@@ -3624,15 +3675,15 @@ class JoinLeaveTextModal(discord.ui.Modal):
         set_guild(self.db_file, self.guild.id, cfg)
         await interaction.response.edit_message(embed=self.embed_fn(self.guild, cfg), view=self.parent)
 
-def build_join_leave_msg(cfg, member):
+def build_join_leave_msg(cfg, member, invite=None):
     """Construit le message/embed de bienvenue ou départ."""
-    text    = resolve_vars(cfg.get("message",""), member) if cfg.get("message") else None
+    text    = resolve_vars(cfg.get("message",""), member, invite) if cfg.get("message") else None
     embed   = None
     if cfg.get("use_embed"):
         try: color = int(cfg.get("embed_color","00ff00").replace("#","").replace("0x",""), 16)
         except: color = 0x00ff00
-        title = resolve_vars(cfg.get("embed_title","") or "", member) or None
-        desc  = resolve_vars(cfg.get("embed_desc","")  or "", member) or None
+        title = resolve_vars(cfg.get("embed_title","") or "", member, invite) or None
+        desc  = resolve_vars(cfg.get("embed_desc","")  or "", member, invite) or None
         embed = discord.Embed(title=title, description=desc, color=color)
         if cfg.get("embed_image"):
             embed.set_thumbnail(url=member.display_avatar.url)
@@ -3707,24 +3758,7 @@ async def set_boostembed(ctx):
     e.description = "`+boostembed on` — Activer\n`+boostembed off` — Desactiver\n`+boostembed test` — Tester\n`+boostlog on #salon` — Salon de logs boost"
     await ctx.send(embed=e)
 
-@bot.command(name="autopublish")
-@commands.has_permissions(administrator=True)
-async def autopublish_cmd(ctx, action: str):
-    cfg = get_guild("modconfig.json", ctx.guild.id); cfg["autopublish"] = (action.lower()=="on")
-    set_guild("modconfig.json", ctx.guild.id, cfg)
-    await ctx.send(f"Autopublish {'activé' if action.lower()=='on' else 'désactivé'}.")
 
-@bot.command(name="report_settings")
-@commands.has_permissions(administrator=True)
-async def report_settings(ctx, channel: discord.TextChannel = None):
-    cfg = get_guild("modconfig.json", ctx.guild.id)
-    if channel:
-        cfg["report_channel"] = str(channel.id); set_guild("modconfig.json", ctx.guild.id, cfg)
-        await ctx.send(f"Salon de reports : {channel.mention}.")
-    else:
-        cid = cfg.get("report_channel"); ch = ctx.guild.get_channel(int(cid)) if cid else None
-        e   = discord.Embed(title="Reports", color=get_color(ctx.guild.id)); e.add_field(name="Salon", value=ch.mention if ch else "Non configuré")
-        await ctx.send(embed=e)
 
 @bot.command(name="show_pics")
 @commands.has_permissions(administrator=True)
@@ -4083,26 +4117,129 @@ async def setbanner(ctx, url: str = None):
     except Exception as ex: await ctx.send(f"Erreur : {ex}")
 
 @bot.command(name="setprofil")
-@commands.is_owner()
 async def setprofil(ctx):
-    def check(m): return m.author == ctx.author and m.channel == ctx.channel
-    await ctx.send("Nouveau **nom** ? (ou `skip`)")
-    try:
-        name_msg = await bot.wait_for("message", check=check, timeout=60)
-        name     = name_msg.content if name_msg.content.lower() != "skip" else None
-        await ctx.send("Nouveau **lien de photo de profil** ? (ou `skip`)")
-        pic_msg  = await bot.wait_for("message", check=check, timeout=60)
-        pic_url  = pic_msg.content if pic_msg.content.lower() != "skip" else None
-        if name:
-            try: await bot.user.edit(username=name)
-            except: pass
-        if pic_url:
-            async with aiohttp.ClientSession() as s:
-                async with s.get(pic_url) as r: data = await r.read()
-            await bot.user.edit(avatar=data)
-        await ctx.send("Profil du bot mis à jour !")
-    except asyncio.TimeoutError: await ctx.send("Temps écoulé.")
-    except Exception as ex: await ctx.send(f"Erreur : {ex}")
+    if ctx.author.id not in OWNER_IDS:
+        return
+    e = discord.Embed(title="⚙️ Profil du bot", color=get_color(ctx.guild.id))
+    e.set_thumbnail(url=bot.user.display_avatar.url)
+    e.add_field(name="Nom actuel",   value=bot.user.name, inline=True)
+    e.add_field(name="ID",           value=str(bot.user.id), inline=True)
+    e.set_footer(text="Utilise les boutons pour modifier")
+    view = SetProfilView()
+    msg  = await ctx.send(embed=e, view=view)
+    view.message = msg
+
+class SetProfilView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=120)
+        self.message = None
+
+    @discord.ui.button(label="✏️ Nom du bot", style=discord.ButtonStyle.primary, row=0)
+    async def set_name(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id not in OWNER_IDS:
+            return await interaction.response.send_message("Non autorisé.", ephemeral=True)
+        await interaction.response.send_modal(SetProfilModal("nom", self))
+
+    @discord.ui.button(label="🖼️ Photo de profil (URL)", style=discord.ButtonStyle.primary, row=0)
+    async def set_avatar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id not in OWNER_IDS:
+            return await interaction.response.send_message("Non autorisé.", ephemeral=True)
+        await interaction.response.send_modal(SetProfilModal("avatar", self))
+
+    @discord.ui.button(label="🖼️ Bannière (URL)", style=discord.ButtonStyle.primary, row=0)
+    async def set_banner(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id not in OWNER_IDS:
+            return await interaction.response.send_message("Non autorisé.", ephemeral=True)
+        await interaction.response.send_modal(SetProfilModal("banniere", self))
+
+    @discord.ui.button(label="🎮 Activité", style=discord.ButtonStyle.secondary, row=1)
+    async def set_activity(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id not in OWNER_IDS:
+            return await interaction.response.send_message("Non autorisé.", ephemeral=True)
+        await interaction.response.send_modal(SetProfilModal("activite", self))
+
+    @discord.ui.button(label="🟢 Statut", style=discord.ButtonStyle.secondary, row=1)
+    async def set_status(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id not in OWNER_IDS:
+            return await interaction.response.send_message("Non autorisé.", ephemeral=True)
+        sel = discord.ui.Select(
+            placeholder="Choisir le statut",
+            options=[
+                discord.SelectOption(label="En ligne",     value="online",    emoji="🟢"),
+                discord.SelectOption(label="Inactif",      value="idle",      emoji="🟡"),
+                discord.SelectOption(label="Ne pas déranger", value="dnd",    emoji="🔴"),
+                discord.SelectOption(label="Invisible",    value="invisible", emoji="⚫"),
+            ]
+        )
+        parent = self
+        async def status_cb(inter):
+            status_map = {"online": discord.Status.online, "idle": discord.Status.idle, "dnd": discord.Status.dnd, "invisible": discord.Status.invisible}
+            await bot.change_presence(status=status_map[inter.data["values"][0]])
+            await inter.response.send_message(f"Statut mis à jour : **{inter.data['values'][0]}**", ephemeral=True)
+        sel.callback = status_cb
+        v = discord.ui.View(timeout=60); v.add_item(sel)
+        await interaction.response.edit_message(view=v)
+
+    @discord.ui.button(label="📋 Type d'activité", style=discord.ButtonStyle.secondary, row=1)
+    async def set_activity_type(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id not in OWNER_IDS:
+            return await interaction.response.send_message("Non autorisé.", ephemeral=True)
+        sel = discord.ui.Select(
+            placeholder="Type d'activité",
+            options=[
+                discord.SelectOption(label="Joue à",     value="playing",   emoji="🎮"),
+                discord.SelectOption(label="Regarde",     value="watching",  emoji="📺"),
+                discord.SelectOption(label="Écoute",     value="listening", emoji="🎵"),
+                discord.SelectOption(label="En compétition", value="competing", emoji="🏆"),
+            ]
+        )
+        async def type_cb(inter):
+            cfg = get_guild("botconfig.json", 0)
+            cfg["activity_type"] = inter.data["values"][0]
+            set_guild("botconfig.json", 0, cfg)
+            await inter.response.send_message(f"Type d'activité : **{inter.data['values'][0]}**", ephemeral=True)
+        sel.callback = type_cb
+        v = discord.ui.View(timeout=60); v.add_item(sel)
+        await interaction.response.edit_message(view=v)
+
+    async def on_timeout(self):
+        try:
+            for item in self.children: item.disabled = True
+            if self.message: await self.message.edit(view=self)
+        except: pass
+
+class SetProfilModal(discord.ui.Modal):
+    value = discord.ui.TextInput(label="Valeur", max_length=200)
+    def __init__(self, field_type, parent):
+        titles = {"nom": "Nouveau nom du bot", "avatar": "URL de la photo de profil", "banniere": "URL de la bannière", "activite": "Texte de l'activité"}
+        super().__init__(title=titles.get(field_type, "Modifier"))
+        self.field_type = field_type
+        self.parent     = parent
+        self.value.placeholder = {"nom": "Ex: Pocoyo", "avatar": "https://...", "banniere": "https://...", "activite": "votre serveur"}.get(field_type, "")
+    async def on_submit(self, interaction: discord.Interaction):
+        val = str(self.value).strip()
+        try:
+            if self.field_type == "nom":
+                await bot.user.edit(username=val)
+                await interaction.response.send_message(f"Nom mis à jour : **{val}**", ephemeral=True)
+            elif self.field_type == "avatar":
+                async with aiohttp.ClientSession() as s:
+                    async with s.get(val) as r: data = await r.read()
+                await bot.user.edit(avatar=data)
+                await interaction.response.send_message("Photo de profil mise à jour !", ephemeral=True)
+            elif self.field_type == "banniere":
+                async with aiohttp.ClientSession() as s:
+                    async with s.get(val) as r: data = await r.read()
+                await bot.user.edit(banner=data)
+                await interaction.response.send_message("Bannière mise à jour !", ephemeral=True)
+            elif self.field_type == "activite":
+                cfg = get_guild("botconfig.json", 0)
+                act_type = cfg.get("activity_type", "watching")
+                types = {"playing": discord.ActivityType.playing, "watching": discord.ActivityType.watching, "listening": discord.ActivityType.listening, "competing": discord.ActivityType.competing}
+                await bot.change_presence(activity=discord.Activity(type=types.get(act_type, discord.ActivityType.watching), name=val))
+                await interaction.response.send_message(f"Activité mise à jour : **{val}**", ephemeral=True)
+        except Exception as ex:
+            await interaction.response.send_message(f"Erreur : {ex}", ephemeral=True)
 
 @bot.command(name="theme")
 @commands.has_permissions(administrator=True)
@@ -4504,22 +4641,6 @@ async def permchannel(ctx, member: discord.Member):
     e.set_footer(text=f"Par {ctx.author}")
     await msg.edit(content=None, embed=e)
 
-@bot.command(name="poll")
-@commands.has_permissions(manage_messages=True)
-async def poll(ctx, question: str, *choices):
-    if len(choices) < 2:
-        return await ctx.send("Usage : `+poll \"Question\" \"Choix1\" \"Choix2\" ...` (2 a 10 choix)")
-    if len(choices) > 10:
-        return await ctx.send("Maximum 10 choix.")
-    emojis = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
-    desc   = "\n".join(f"{emojis[i]} {c}" for i, c in enumerate(choices))
-    e = discord.Embed(title=f"📊 {question}", description=desc, color=get_color(ctx.guild.id), timestamp=datetime.utcnow())
-    e.set_footer(text=f"Sondage par {ctx.author}")
-    try: await ctx.message.delete()
-    except: pass
-    msg = await ctx.send(embed=e)
-    for i in range(len(choices)):
-        await msg.add_reaction(emojis[i])
 
 @bot.command(name="timer")
 async def timer(ctx, duration: str, *, message: str = "Temps écoulé !"):
