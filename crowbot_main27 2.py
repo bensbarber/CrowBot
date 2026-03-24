@@ -2163,41 +2163,173 @@ async def link_channel(ctx, action: str, channel: discord.TextChannel = None):
     cfg["nolink_channels"] = nolink; set_guild("antiraid.json", ctx.guild.id, cfg)
     await ctx.send(f"Antilink `{action}` dans {channel.mention}.")
 
+# ── Giveaway — Panneau configurable ──────────────────────────────
+
+def _giveaway_panel_embed(cfg):
+    """Embed du panneau de configuration du giveaway."""
+    e = discord.Embed(title="🎉 Paramètre du giveaway", color=0xff73fa)
+    e.add_field(name="🎁 Gain",              value=cfg.get("title")   or "*aucun*",  inline=False)
+    e.add_field(name="⏱️ Durée",            value=cfg.get("duree")   or "*aucun*",  inline=False)
+    e.add_field(name="📌 Salon",             value=f"<#{cfg['channel']}>" if cfg.get("channel") else "*aucun*", inline=False)
+    e.add_field(name="🎊 Emoji",             value=cfg.get("emoji")   or "*aucun*",  inline=False)
+    e.add_field(name="🏆 Nombre de gagnants",value=cfg.get("winners") or "*aucun*",  inline=False)
+    return e
+
+class GiveawayConfigSelect(discord.ui.Select):
+    def __init__(self, cfg, author):
+        self.cfg    = cfg
+        self.author = author
+        options = [
+            discord.SelectOption(label="Modifier le gain",              emoji="🎁", value="title"),
+            discord.SelectOption(label="Modifier la durée",             emoji="⏱️", value="duree"),
+            discord.SelectOption(label="Modifier le salon",             emoji="📌", value="channel"),
+            discord.SelectOption(label="Modifier le nombre de gagnants",emoji="1️⃣", value="winners"),
+            discord.SelectOption(label="Modifier l'emote",              emoji="🎊", value="emoji"),
+        ]
+        super().__init__(placeholder="Clique ici pour configurer le giveaway", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user != self.author:
+            return await interaction.response.send_message("Ce n'est pas ton panneau.", ephemeral=True)
+
+        val = self.values[0]
+
+        if val == "channel":
+            chans = interaction.guild.text_channels[:25]
+            sel   = discord.ui.Select(
+                placeholder="Choisir le salon du giveaway",
+                options=[discord.SelectOption(label=f"#{c.name}"[:25], value=str(c.id)) for c in chans]
+            )
+            cfg_ref = self.cfg
+            parent  = self.view
+            async def chan_cb(inter):
+                cfg_ref["channel"] = inter.data["values"][0]
+                await inter.response.edit_message(embed=_giveaway_panel_embed(cfg_ref), view=parent)
+            sel.callback = chan_cb
+            v = discord.ui.View(timeout=60); v.add_item(sel)
+            return await interaction.response.edit_message(view=v)
+
+        # Modals pour les autres champs
+        modals = {
+            "title":   ("🎁 Modifier le gain",              "Nom du lot à gagner",          "Ex: Nitro Classic"),
+            "duree":   ("⏱️ Modifier la durée",            "Durée (ex: 10m, 2h, 1d)",      "Ex: 1h"),
+            "winners": ("🏆 Modifier le nombre de gagnants","Nombre de gagnants",            "Ex: 1"),
+            "emoji":   ("🎊 Modifier l'emote",              "Emoji de participation",        "Ex: 🎉"),
+        }
+        title_modal, label, placeholder = modals[val]
+
+        class GiveawayFieldModal(discord.ui.Modal, title=title_modal):
+            value = discord.ui.TextInput(label=label, placeholder=placeholder, max_length=100)
+            def __init__(self_, cfg_ref, key, parent_view):
+                super().__init__()
+                self_.cfg_ref     = cfg_ref
+                self_.key         = key
+                self_.parent_view = parent_view
+            async def on_submit(self_, inter):
+                self_.cfg_ref[self_.key] = str(self_.value).strip()
+                await inter.response.edit_message(embed=_giveaway_panel_embed(self_.cfg_ref), view=self_.parent_view)
+
+        await interaction.response.send_modal(GiveawayFieldModal(self.cfg, val, self.view))
+
+class GiveawayPanelView(discord.ui.View):
+    def __init__(self, cfg, author):
+        super().__init__(timeout=180)
+        self.cfg    = cfg
+        self.author = author
+        self.add_item(GiveawayConfigSelect(cfg, author))
+
+    @discord.ui.button(label="✅ Valider", style=discord.ButtonStyle.success, row=1)
+    async def valider(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user != self.author:
+            return await interaction.response.send_message("Ce n'est pas ton panneau.", ephemeral=True)
+
+        cfg = self.cfg
+        # Vérifications
+        if not cfg.get("title"):
+            return await interaction.response.send_message("❌ Tu dois définir un gain.", ephemeral=True)
+        if not cfg.get("duree"):
+            return await interaction.response.send_message("❌ Tu dois définir une durée.", ephemeral=True)
+        if not cfg.get("channel"):
+            return await interaction.response.send_message("❌ Tu dois choisir un salon.", ephemeral=True)
+
+        delta = parse_dur(cfg["duree"])
+        if not delta:
+            return await interaction.response.send_message("❌ Durée invalide. Ex: `10m`, `2h`, `1d`", ephemeral=True)
+
+        try: winners_count = int(cfg.get("winners", 1))
+        except: winners_count = 1
+
+        emoji    = cfg.get("emoji") or "🎉"
+        title    = cfg["title"]
+        channel  = interaction.guild.get_channel(int(cfg["channel"]))
+        if not channel:
+            return await interaction.response.send_message("❌ Salon introuvable.", ephemeral=True)
+
+        end_time = datetime.utcnow() + delta
+        e = discord.Embed(title=f"{emoji} {title}", color=0xff73fa)
+        e.description = (
+            f"Réagissez avec {emoji} pour participer !\n\n"
+            f"**Gagnants :** {winners_count}\n"
+            f"**Fin :** <t:{int(end_time.timestamp())}:R>"
+        )
+        e.set_footer(text=f"Organisé par {interaction.user}")
+
+        gaw_msg = await channel.send(embed=e)
+        await gaw_msg.add_reaction(emoji)
+
+        data = get_guild("giveaways.json", interaction.guild.id)
+        data[str(gaw_msg.id)] = {
+            "channel": str(channel.id),
+            "title":   title,
+            "winners": winners_count,
+            "emoji":   emoji,
+            "activé":  True
+        }
+        set_guild("giveaways.json", interaction.guild.id, data)
+
+        await interaction.response.edit_message(
+            embed=discord.Embed(description=f"✅ Giveaway lancé dans {channel.mention} !", color=0x00ff00),
+            view=None
+        )
+
+        # Attendre la fin et tirer les gagnants
+        await asyncio.sleep(delta.total_seconds())
+        data = get_guild("giveaways.json", interaction.guild.id)
+        gaw  = data.get(str(gaw_msg.id))
+        if gaw and gaw.get("activé"):
+            try:
+                msg_ref      = await channel.fetch_message(gaw_msg.id)
+                reaction     = discord.utils.get(msg_ref.reactions, emoji=emoji)
+                participants = [u async for u in reaction.users() if not u.bot] if reaction else []
+                if not participants:
+                    await channel.send(f"🎉 Giveaway **{title}** terminé — personne n'a participé.")
+                else:
+                    winners = random.sample(participants, min(winners_count, len(participants)))
+                    await channel.send(
+                        f"🎉 Félicitations {', '.join(w.mention for w in winners)} ! "
+                        f"Vous avez gagné **{title}** !"
+                    )
+                    e2 = msg_ref.embeds[0] if msg_ref.embeds else discord.Embed(title=title)
+                    e2.description = f"**Gagnant(s) :** {', '.join(w.mention for w in winners)}\n*Giveaway terminé*"
+                    e2.color = 0x888888
+                    await msg_ref.edit(embed=e2)
+            except: pass
+            data[str(gaw_msg.id)]["activé"] = False
+            set_guild("giveaways.json", interaction.guild.id, data)
+
+    async def on_timeout(self):
+        try:
+            for item in self.children: item.disabled = True
+        except: pass
+
 @bot.command(name="giveaway")
 @commands.has_permissions(manage_guild=True)
 async def giveaway(ctx):
-    def check(m): return m.author == ctx.author and m.channel == ctx.channel
-    await ctx.send("**Giveaway** - Quel est le titre ?")
-    try:
-        title = (await bot.wait_for("message", check=check, timeout=60)).content
-        await ctx.send("Durée ? (ex: `10m`, `2h`, `1d`)")
-        dur_str = (await bot.wait_for("message", check=check, timeout=60)).content
-        delta   = parse_dur(dur_str)
-        if not delta: return await ctx.send("Durée invalide.")
-        await ctx.send("Nombre de gagnants ?")
-        winners_count = int((await bot.wait_for("message", check=check, timeout=60)).content)
-    except (asyncio.TimeoutError, ValueError): return await ctx.send("Temps écoulé ou valeur invalide.")
-    end_time = datetime.utcnow() + delta
-    e = discord.Embed(title=title, color=0xff73fa)
-    e.description = f"Reagissez avec pour participer !\n\n**Gagnants :** {winners_count}\n**Fin :** <t:{int(end_time.timestamp())}:R>"
-    gaw_msg = await ctx.send(embed=e)
-    await gaw_msg.add_reaction("🎉")
-    data = get_guild("giveaways.json", ctx.guild.id)
-    data[str(gaw_msg.id)] = {"channel": str(ctx.channel.id), "title": title, "winners": winners_count, "activé": True}
-    set_guild("giveaways.json", ctx.guild.id, data)
-    await asyncio.sleep(delta.total_seconds())
-    data = get_guild("giveaways.json", ctx.guild.id); gaw = data.get(str(gaw_msg.id))
-    if gaw and gaw.get("activé"):
-        try:
-            msg_ref      = await ctx.channel.fetch_message(gaw_msg.id)
-            réaction     = discord.utils.get(msg_ref.réactions, emoji="🎉")
-            participants = [u async for u in réaction.users() if not u.bot] if réaction else []
-            if not participants: await ctx.send(f"Giveaway **{title}** terminé, personne n'a participe.")
-            else:
-                winners = random.sample(participants, min(winners_count, len(participants)))
-                await ctx.send(f"Felicitations {', '.join(w.mention for w in winners)} ! Vous avez gagne **{title}** !")
-        except: pass
-        data[str(gaw_msg.id)]["activé"] = False; set_guild("giveaways.json", ctx.guild.id, data)
+    try: await ctx.message.delete()
+    except: pass
+    cfg = {}
+    e   = _giveaway_panel_embed(cfg)
+    await ctx.send(embed=e, view=GiveawayPanelView(cfg, ctx.author))
 
 @bot.command(name="end_giveaway")
 @commands.has_permissions(manage_guild=True)
@@ -2207,15 +2339,21 @@ async def end_giveaway(ctx, message_id: int):
     ch = ctx.guild.get_channel(int(gaw["channel"]))
     if not ch: return await ctx.send("Salon introuvable.")
     try:
-        msg      = await ch.fetch_message(message_id)
-        réaction = discord.utils.get(msg.réactions, emoji="🎉")
-        participants = [u async for u in réaction.users() if not u.bot] if réaction else []
-        if not participants: await ch.send(f"Giveaway **{gaw['title']}** terminé, personne n'a participe.")
+        emoji        = gaw.get("emoji", "🎉")
+        msg          = await ch.fetch_message(message_id)
+        reaction     = discord.utils.get(msg.reactions, emoji=emoji)
+        participants = [u async for u in reaction.users() if not u.bot] if reaction else []
+        if not participants:
+            await ch.send(f"🎉 Giveaway **{gaw['title']}** terminé — personne n'a participé.")
         else:
             winners = random.sample(participants, min(gaw["winners"], len(participants)))
-            await ch.send(f"Felicitations {', '.join(w.mention for w in winners)} ! Vous avez gagne **{gaw['title']}** !")
+            await ch.send(
+                f"🎉 Félicitations {', '.join(w.mention for w in winners)} ! "
+                f"Vous avez gagné **{gaw['title']}** !"
+            )
     except Exception as ex: await ctx.send(f"Erreur : {ex}")
-    data[str(message_id)]["activé"] = False; set_guild("giveaways.json", ctx.guild.id, data)
+    data[str(message_id)]["activé"] = False
+    set_guild("giveaways.json", ctx.guild.id, data)
     await ctx.send("Giveaway terminé.")
 
 @bot.command(name="reroll")
@@ -2223,14 +2361,15 @@ async def end_giveaway(ctx, message_id: int):
 async def reroll(ctx):
     data = get_guild("giveaways.json", ctx.guild.id)
     last = next(((gid, gaw) for gid, gaw in reversed(list(data.items())) if gaw.get("channel") == str(ctx.channel.id)), None)
-    if not last: return await ctx.send("Aucun giveaway recent dans ce salon.")
+    if not last: return await ctx.send("Aucun giveaway récent dans ce salon.")
     gid, gaw = last
     try:
+        emoji        = gaw.get("emoji", "🎉")
         msg          = await ctx.channel.fetch_message(int(gid))
-        réaction     = discord.utils.get(msg.réactions, emoji="🎉")
-        participants = [u async for u in réaction.users() if not u.bot]
+        reaction     = discord.utils.get(msg.reactions, emoji=emoji)
+        participants = [u async for u in reaction.users() if not u.bot]
         if not participants: return await ctx.send("Aucun participant.")
-        await ctx.send(f"Nouveau tirage ! Gagnant : {random.choice(participants).mention} !")
+        await ctx.send(f"🎉 Nouveau tirage ! Gagnant : {random.choice(participants).mention} !")
     except Exception as ex: await ctx.send(f"Erreur : {ex}")
 
 
