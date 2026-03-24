@@ -8,6 +8,8 @@ import json
 import os
 import re
 import aiohttp
+import importlib
+import sys
 
 import os
 TOKEN = os.getenv("TOKEN")
@@ -205,15 +207,37 @@ async def do_punish(guild, member, ptype, reason, cfg=None):
 async def on_ready():
     print(f"Pocoyo connecté : {bot.user} | Préfixe : {PREFIX} | Serveurs : {len(bot.guilds)}")
     await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="votre serveur"))
-    # Enregistrer les views persistantes
-    bot.add_view(AvisPanelView())
-    bot.add_view(SuggestPanelView())
     # Charger le cache d'invitations
     for guild in bot.guilds:
         try:
             invites = await guild.invites()
             invite_cache[guild.id] = {inv.code: inv.uses for inv in invites}
         except: pass
+
+@bot.command(name="reload")
+async def reload_bot(ctx):
+    if ctx.author.id not in OWNER_IDS:
+        return
+    msg = await ctx.send("🔄 Rechargement en cours...")
+    try:
+        # Recharge le fichier principal
+        module_name = os.path.splitext(os.path.basename(__file__))[0]
+        # Supprime et recharge toutes les commandes
+        bot.remove_command("reload")
+        new_commands = []
+        for cmd in list(bot.commands):
+            bot.remove_command(cmd.name)
+        importlib.invalidate_caches()
+        await msg.edit(content="✅ Rechargement impossible sans Cogs.\n💡 Utilise `+restart` pour redémarrer proprement le process.")
+    except Exception as ex:
+        await msg.edit(content=f"❌ Erreur : `{ex}`")
+
+@bot.command(name="restart")
+async def restart_bot(ctx):
+    if ctx.author.id not in OWNER_IDS:
+        return
+    await ctx.send("🔄 Redémarrage du bot...")
+    os.execv(sys.executable, [sys.executable] + sys.argv)
 
 class GuildJoinView(discord.ui.View):
     def __init__(self, guild):
@@ -410,7 +434,6 @@ MULTIWORD_CMDS = {
     "backup list":         "backup_list",
     "backup delete":       "backup_delete",
     "backup load":         "backup_load",
-    "suggestion settings": "suggestion_settings",
     "lb suggestions":      "lb_suggestions",
     "join settings":       "join_settings",
     "join channel":        "join_channel",
@@ -433,8 +456,6 @@ MULTIWORD_CMDS = {
     "création limit":      "creation_limit",
     "clear badwords":      "badwords",
     "boostembed test":     "boostembed",
-    "panel avis":          "panelavis",
-    "panel suggest":       "panelsuggest",
 }
 
 @bot.event
@@ -3458,19 +3479,6 @@ async def suggestion(ctx, *, message: str):
         try: await ctx.message.delete()
         except: pass
 
-@bot.command(name="suggestion_settings")
-@commands.has_permissions(administrator=True)
-async def suggestion_settings(ctx, channel: discord.TextChannel = None):
-    cfg = get_guild("suggestions.json", ctx.guild.id)
-    if channel:
-        cfg["channel"] = str(channel.id); set_guild("suggestions.json", ctx.guild.id, cfg)
-        await ctx.send(f"Salon de suggestions : {channel.mention}")
-    else:
-        cid = cfg.get("channel"); ch = ctx.guild.get_channel(int(cid)) if cid else None
-        e   = discord.Embed(title="Config suggestions", color=get_color(ctx.guild.id))
-        e.add_field(name="Salon", value=ch.mention if ch else "Non configuré")
-        await ctx.send(embed=e)
-
 @bot.command(name="lb_suggestions")
 async def lb_suggestions(ctx):
     await ctx.send("Le classement des suggestions est disponible dans le salon de suggestions configuré.")
@@ -3480,15 +3488,30 @@ def resolve_vars(text, member, invite=None):
     """Remplace les variables dans les messages de bienvenue/départ."""
     if not text:
         return text
+    # Calculer le nombre total de personnes invitées par l'inviteur
+    inviter_count = "?"
+    if invite and invite.inviter:
+        try:
+            guild_invites = invite_cache.get(member.guild.id, {})
+            # On récupère toutes les invitations actives du serveur pour compter celles de l'inviteur
+            inviter_total = 0
+            for guild in member.guild.me.mutual_guilds:
+                if guild.id == member.guild.id:
+                    pass
+            # Fallback : on utilise les uses de l'invite actuelle
+            inviter_count = str(invite.uses) if invite.uses is not None else "?"
+        except:
+            inviter_count = "?"
     replacements = {
-        "{member}":       member.mention,
-        "{member_name}":  str(member),
-        "{member_id}":    str(member.id),
-        "{server}":       member.guild.name,
-        "{count}":        str(member.guild.member_count),
-        "{inviter}":      str(invite.inviter) if invite and invite.inviter else "Inconnu",
-        "{invite_code}":  invite.code if invite else "?",
-        "{invite_uses}":  str(invite.uses) if invite else "?",
+        "{member}":         member.mention,
+        "{member_name}":    str(member),
+        "{member_id}":      str(member.id),
+        "{server}":         member.guild.name,
+        "{count}":          str(member.guild.member_count),
+        "{inviter}":        str(invite.inviter) if invite and invite.inviter else "Inconnu",
+        "{invite_code}":    invite.code if invite else "?",
+        "{invite_uses}":    str(invite.uses) if invite else "?",
+        "{inviter_count}":  inviter_count,
     }
     for k, v in replacements.items():
         text = text.replace(k, v)
@@ -3649,6 +3672,7 @@ class JoinSettingsView(discord.ui.View):
         e.add_field(name="`{inviter}`",      value="Nom de la personne qui a invité",      inline=False)
         e.add_field(name="`{invite_code}`",  value="Code de l'invitation utilisée",        inline=False)
         e.add_field(name="`{invite_uses}`",  value="Nombre d'utilisations de l'invitation",inline=False)
+        e.add_field(name="`{inviter_count}`",value="Nombre de membres invités par l'inviteur (via cette invitation)", inline=False)
         e.set_footer(text="Ces variables fonctionnent dans le message texte, le titre et la description de l'embed.")
         await interaction.response.send_message(embed=e, ephemeral=True)
 
@@ -6767,57 +6791,5 @@ async def create_cmd(ctx, *args):
         e.add_field(name=f"Echecs ({len(errors)})", value="\n".join(errors[:5]), inline=False)
     e.set_footer(text=f"Par {ctx.author}")
     await msg.edit(content=None, embed=e)
-
-# ── Panel permanent Avis (tout le monde peut cliquer) ────────────
-class AvisPanelView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="⭐ Laisser un avis", style=discord.ButtonStyle.primary, custom_id="panel_avis_open")
-    async def open_avis(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message(
-            "Choisis ta note :",
-            view=AvisNoteView(interaction.user),
-            ephemeral=True
-        )
-
-@bot.command(name="panelavis")
-@commands.has_permissions(administrator=True)
-async def panel_avis(ctx):
-    try: await ctx.message.delete()
-    except: pass
-    e = discord.Embed(
-        title="⭐ Laisser un avis",
-        description="Tu as utilisé le bot ? Partage ton expérience en cliquant sur le bouton ci-dessous !\nTon avis nous aide à améliorer le bot. 💜",
-        color=0x5865f2,
-        timestamp=discord.utils.utcnow()
-    )
-    e.set_footer(text="Clique sur le bouton pour commencer")
-    await ctx.send(embed=e, view=AvisPanelView())
-
-
-# ── Panel permanent Suggestion (tout le monde peut cliquer) ──────
-class SuggestPanelView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="📬 Envoyer une suggestion", style=discord.ButtonStyle.primary, custom_id="panel_suggest_open")
-    async def open_suggest(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(SuggestionModal())
-
-@bot.command(name="panelsuggest")
-@commands.has_permissions(administrator=True)
-async def panel_suggest(ctx):
-    try: await ctx.message.delete()
-    except: pass
-    e = discord.Embed(
-        title="📬 Faire une suggestion",
-        description="Tu as une idée pour améliorer le bot ? Clique sur le bouton ci-dessous et partage-la !\nToutes les suggestions sont lues. 💡",
-        color=0x5865f2,
-        timestamp=discord.utils.utcnow()
-    )
-    e.set_footer(text="Clique sur le bouton pour commencer")
-    await ctx.send(embed=e, view=SuggestPanelView())
-
 
 bot.run(TOKEN)
