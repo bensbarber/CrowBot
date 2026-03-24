@@ -205,6 +205,9 @@ async def do_punish(guild, member, ptype, reason, cfg=None):
 async def on_ready():
     print(f"Pocoyo connecté : {bot.user} | Préfixe : {PREFIX} | Serveurs : {len(bot.guilds)}")
     await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="votre serveur"))
+    # Enregistrer les views persistantes
+    bot.add_view(AvisPanelView())
+    bot.add_view(SuggestPanelView())
     # Charger le cache d'invitations
     for guild in bot.guilds:
         try:
@@ -6959,6 +6962,58 @@ class AvisModal(discord.ui.Modal, title="Ton avis"):
         e.set_footer(text=f"ID : {interaction.user.id}")
         await ch.send(embed=e)
         await interaction.response.send_message(f"✅ Merci pour ton avis **{self.note}/10** !", ephemeral=True)
+
+
+# ── Panel permanent Avis (tout le monde peut cliquer) ────────────
+class AvisPanelView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)  # Permanent !
+
+    @discord.ui.button(label="⭐ Laisser un avis", style=discord.ButtonStyle.primary, custom_id="panel_avis_open")
+    async def open_avis(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(
+            "Choisis ta note :",
+            view=AvisNoteView(interaction.user),
+            ephemeral=True
+        )
+
+@bot.command(name="panel-avis")
+@commands.has_permissions(administrator=True)
+async def panel_avis(ctx):
+    try: await ctx.message.delete()
+    except: pass
+    e = discord.Embed(
+        title="⭐ Laisser un avis",
+        description="Tu as utilisé le bot ? Partage ton expérience en cliquant sur le bouton ci-dessous !\nTon avis nous aide à améliorer le bot. 💜",
+        color=0x5865f2,
+        timestamp=discord.utils.utcnow()
+    )
+    e.set_footer(text="Clique sur le bouton pour commencer")
+    await ctx.send(embed=e, view=AvisPanelView())
+
+
+# ── Panel permanent Suggestion (tout le monde peut cliquer) ──────
+class SuggestPanelView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)  # Permanent !
+
+    @discord.ui.button(label="📬 Envoyer une suggestion", style=discord.ButtonStyle.primary, custom_id="panel_suggest_open")
+    async def open_suggest(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(SuggestionModal())
+
+@bot.command(name="panel-suggest")
+@commands.has_permissions(administrator=True)
+async def panel_suggest(ctx):
+    try: await ctx.message.delete()
+    except: pass
+    e = discord.Embed(
+        title="📬 Faire une suggestion",
+        description="Tu as une idée pour améliorer le bot ? Clique sur le bouton ci-dessous et partage-la !\nToutes les suggestions sont lues. 💡",
+        color=0x5865f2,
+        timestamp=discord.utils.utcnow()
+    )
+    e.set_footer(text="Clique sur le bouton pour commencer")
+    await ctx.send(embed=e, view=SuggestPanelView())
 
 
 bot.run(TOKEN)
