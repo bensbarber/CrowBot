@@ -205,6 +205,9 @@ async def do_punish(guild, member, ptype, reason, cfg=None):
 async def on_ready():
     print(f"Pocoyo connecté : {bot.user} | Préfixe : {PREFIX} | Serveurs : {len(bot.guilds)}")
     await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="votre serveur"))
+    # Enregistrer les views persistantes
+    bot.add_view(AvisPanelView())
+    bot.add_view(SuggestPanelView())
     # Charger le cache d'invitations
     for guild in bot.guilds:
         try:
@@ -430,6 +433,8 @@ MULTIWORD_CMDS = {
     "création limit":      "creation_limit",
     "clear badwords":      "badwords",
     "boostembed test":     "boostembed",
+    "panel avis":          "panelavis",
+    "panel suggest":       "panelsuggest",
 }
 
 @bot.event
@@ -3470,6 +3475,64 @@ async def suggestion_settings(ctx, channel: discord.TextChannel = None):
 async def lb_suggestions(ctx):
     await ctx.send("Le classement des suggestions est disponible dans le salon de suggestions configuré.")
 
+
+def resolve_vars(text, member, invite=None):
+    """Remplace les variables dans les messages de bienvenue/départ."""
+    if not text:
+        return text
+    replacements = {
+        "{member}":       member.mention,
+        "{member_name}":  str(member),
+        "{member_id}":    str(member.id),
+        "{server}":       member.guild.name,
+        "{count}":        str(member.guild.member_count),
+        "{inviter}":      str(invite.inviter) if invite and invite.inviter else "Inconnu",
+        "{invite_code}":  invite.code if invite else "?",
+        "{invite_uses}":  str(invite.uses) if invite else "?",
+    }
+    for k, v in replacements.items():
+        text = text.replace(k, v)
+    return text
+
+def _join_embed(guild, cfg):
+    """Embed de configuration du système de bienvenue."""
+    channel = guild.get_channel(int(cfg["channel"])) if cfg.get("channel") else None
+    role    = guild.get_role(int(cfg["role"]))  if cfg.get("role")    else None
+    role2   = guild.get_role(int(cfg["role2"])) if cfg.get("role2")   else None
+    enabled = cfg.get("enabled", False)
+
+    e = discord.Embed(
+        title="📥 Configuration — Bienvenue",
+        color=0x00ff00 if enabled else 0x888888
+    )
+    e.add_field(name="✅ Activé",          value="Oui" if enabled else "Non",              inline=True)
+    e.add_field(name="📌 Salon",           value=channel.mention if channel else "*Non défini*", inline=True)
+    e.add_field(name="🏷️ Rôle auto 1",    value=role.mention    if role    else "*Aucun*",  inline=True)
+    e.add_field(name="🏷️ Rôle auto 2",    value=role2.mention   if role2   else "*Aucun*",  inline=True)
+    e.add_field(name="💬 Message texte",   value=cfg.get("message")     or "*Non défini*",  inline=False)
+    e.add_field(name="🖼️ Embed",          value="Activé" if cfg.get("use_embed") else "Désactivé", inline=True)
+    e.add_field(name="📝 Titre embed",     value=cfg.get("embed_title") or "*Non défini*",  inline=True)
+    e.add_field(name="📄 Description",     value=cfg.get("embed_desc")  or "*Non définie*", inline=False)
+    e.set_footer(text="Variables dispo : {member} {member_name} {server} {count} {inviter}")
+    return e
+
+def _leave_embed(guild, cfg):
+    """Embed de configuration du système de départ."""
+    channel = guild.get_channel(int(cfg["channel"])) if cfg.get("channel") else None
+    enabled = cfg.get("enabled", False)
+
+    e = discord.Embed(
+        title="📤 Configuration — Au revoir",
+        color=0xff4500 if enabled else 0x888888
+    )
+    e.add_field(name="✅ Activé",        value="Oui" if enabled else "Non",                inline=True)
+    e.add_field(name="📌 Salon",         value=channel.mention if channel else "*Non défini*", inline=True)
+    e.add_field(name="💬 Message texte", value=cfg.get("message")     or "*Non défini*",    inline=False)
+    e.add_field(name="🖼️ Embed",        value="Activé" if cfg.get("use_embed") else "Désactivé", inline=True)
+    e.add_field(name="📝 Titre embed",   value=cfg.get("embed_title") or "*Non défini*",    inline=True)
+    e.add_field(name="📄 Description",   value=cfg.get("embed_desc")  or "*Non définie*",   inline=False)
+    e.set_footer(text="Variables dispo : {member} {member_name} {server} {count}")
+    return e
 
 class JoinSettingsView(discord.ui.View):
     def __init__(self, guild):
@@ -6679,5 +6742,57 @@ async def create_cmd(ctx, *args):
         e.add_field(name=f"Echecs ({len(errors)})", value="\n".join(errors[:5]), inline=False)
     e.set_footer(text=f"Par {ctx.author}")
     await msg.edit(content=None, embed=e)
+
+# ── Panel permanent Avis (tout le monde peut cliquer) ────────────
+class AvisPanelView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="⭐ Laisser un avis", style=discord.ButtonStyle.primary, custom_id="panel_avis_open")
+    async def open_avis(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(
+            "Choisis ta note :",
+            view=AvisNoteView(interaction.user),
+            ephemeral=True
+        )
+
+@bot.command(name="panelavis")
+@commands.has_permissions(administrator=True)
+async def panel_avis(ctx):
+    try: await ctx.message.delete()
+    except: pass
+    e = discord.Embed(
+        title="⭐ Laisser un avis",
+        description="Tu as utilisé le bot ? Partage ton expérience en cliquant sur le bouton ci-dessous !\nTon avis nous aide à améliorer le bot. 💜",
+        color=0x5865f2,
+        timestamp=discord.utils.utcnow()
+    )
+    e.set_footer(text="Clique sur le bouton pour commencer")
+    await ctx.send(embed=e, view=AvisPanelView())
+
+
+# ── Panel permanent Suggestion (tout le monde peut cliquer) ──────
+class SuggestPanelView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="📬 Envoyer une suggestion", style=discord.ButtonStyle.primary, custom_id="panel_suggest_open")
+    async def open_suggest(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(SuggestionModal())
+
+@bot.command(name="panelsuggest")
+@commands.has_permissions(administrator=True)
+async def panel_suggest(ctx):
+    try: await ctx.message.delete()
+    except: pass
+    e = discord.Embed(
+        title="📬 Faire une suggestion",
+        description="Tu as une idée pour améliorer le bot ? Clique sur le bouton ci-dessous et partage-la !\nToutes les suggestions sont lues. 💡",
+        color=0x5865f2,
+        timestamp=discord.utils.utcnow()
+    )
+    e.set_footer(text="Clique sur le bouton pour commencer")
+    await ctx.send(embed=e, view=SuggestPanelView())
+
 
 bot.run(TOKEN)
