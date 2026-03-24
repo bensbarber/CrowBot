@@ -3638,6 +3638,20 @@ class JoinSettingsView(discord.ui.View):
         cfg = get_guild("joinsettings.json", self.guild.id)
         await interaction.response.edit_message(embed=_join_embed(self.guild, cfg), view=self)
 
+    @discord.ui.button(label="📖 Variables", style=discord.ButtonStyle.secondary, row=3)
+    async def show_vars(self, interaction: discord.Interaction, button: discord.ui.Button):
+        e = discord.Embed(title="📖 Variables disponibles — Bienvenue", color=0x5865f2)
+        e.add_field(name="`{member}`",       value="Mention du membre",                    inline=False)
+        e.add_field(name="`{member_name}`",  value="Nom du membre (ex: Jean#1234)",        inline=False)
+        e.add_field(name="`{member_id}`",    value="ID du membre",                         inline=False)
+        e.add_field(name="`{server}`",       value="Nom du serveur",                       inline=False)
+        e.add_field(name="`{count}`",        value="Nombre de membres sur le serveur",     inline=False)
+        e.add_field(name="`{inviter}`",      value="Nom de la personne qui a invité",      inline=False)
+        e.add_field(name="`{invite_code}`",  value="Code de l'invitation utilisée",        inline=False)
+        e.add_field(name="`{invite_uses}`",  value="Nombre d'utilisations de l'invitation",inline=False)
+        e.set_footer(text="Ces variables fonctionnent dans le message texte, le titre et la description de l'embed.")
+        await interaction.response.send_message(embed=e, ephemeral=True)
+
     async def on_timeout(self):
         try:
             for item in self.children: item.disabled = True
@@ -3713,6 +3727,17 @@ class LeaveSettingsView(discord.ui.View):
         set_guild("leavesettings.json", self.guild.id, {})
         cfg = get_guild("leavesettings.json", self.guild.id)
         await interaction.response.edit_message(embed=_leave_embed(self.guild, cfg), view=self)
+
+    @discord.ui.button(label="📖 Variables", style=discord.ButtonStyle.secondary, row=3)
+    async def show_vars(self, interaction: discord.Interaction, button: discord.ui.Button):
+        e = discord.Embed(title="📖 Variables disponibles — Au revoir", color=0x5865f2)
+        e.add_field(name="`{member}`",      value="Mention du membre",                inline=False)
+        e.add_field(name="`{member_name}`", value="Nom du membre (ex: Jean#1234)",    inline=False)
+        e.add_field(name="`{member_id}`",   value="ID du membre",                     inline=False)
+        e.add_field(name="`{server}`",      value="Nom du serveur",                   inline=False)
+        e.add_field(name="`{count}`",       value="Nombre de membres sur le serveur", inline=False)
+        e.set_footer(text="Ces variables fonctionnent dans le message texte, le titre et la description de l'embed.")
+        await interaction.response.send_message(embed=e, ephemeral=True)
 
     async def on_timeout(self):
         try:
