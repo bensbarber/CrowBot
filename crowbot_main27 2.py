@@ -6680,4 +6680,285 @@ async def create_cmd(ctx, *args):
     e.set_footer(text=f"Par {ctx.author}")
     await msg.edit(content=None, embed=e)
 
+
+# ================================================================
+#  SYSTÈME SUGGESTION & AVIS — SERVEUR SUPPORT
+# ================================================================
+
+# ── Commande de configuration ────────────────────────────────────
+@bot.command(name="support_settings")
+async def support_settings(ctx):
+    if ctx.author.id not in OWNER_IDS:
+        return
+    cfg  = get_guild("botconfig.json", 0)
+    e    = _support_settings_embed(cfg)
+    view = SupportSettingsView()
+    msg  = await ctx.send(embed=e, view=view)
+    view.message = msg
+
+def _support_settings_embed(cfg):
+    sugg_ch = cfg.get("support_suggestion_channel")
+    avis_ch = cfg.get("support_avis_channel")
+    e = discord.Embed(title="⚙️ Configuration Support", color=0x5865f2)
+    e.add_field(name="📬 Salon suggestions", value=f"<#{sugg_ch}>" if sugg_ch else "*Non configuré*", inline=True)
+    e.add_field(name="⭐ Salon avis",        value=f"<#{avis_ch}>" if avis_ch else "*Non configuré*", inline=True)
+    e.set_footer(text="Utilise les boutons pour configurer")
+    return e
+
+class SupportSettingsView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=120)
+        self.message = None
+
+    async def refresh(self, interaction):
+        cfg = get_guild("botconfig.json", 0)
+        await interaction.response.edit_message(embed=_support_settings_embed(cfg), view=self)
+
+    @discord.ui.button(label="📬 Salon suggestions", style=discord.ButtonStyle.primary)
+    async def set_sugg_ch(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guilds_channels = interaction.guild.text_channels[:25]
+        sel = discord.ui.Select(
+            placeholder="Salon pour les suggestions",
+            options=[discord.SelectOption(label=f"#{c.name}"[:25], value=str(c.id)) for c in guilds_channels]
+        )
+        parent = self
+        async def cb(inter):
+            cfg = get_guild("botconfig.json", 0)
+            cfg["support_suggestion_channel"] = inter.data["values"][0]
+            set_guild("botconfig.json", 0, cfg)
+            await parent.refresh(inter)
+        sel.callback = cb
+        v = discord.ui.View(timeout=60); v.add_item(sel)
+        await interaction.response.edit_message(view=v)
+
+    @discord.ui.button(label="⭐ Salon avis", style=discord.ButtonStyle.primary)
+    async def set_avis_ch(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guilds_channels = interaction.guild.text_channels[:25]
+        sel = discord.ui.Select(
+            placeholder="Salon pour les avis",
+            options=[discord.SelectOption(label=f"#{c.name}"[:25], value=str(c.id)) for c in guilds_channels]
+        )
+        parent = self
+        async def cb(inter):
+            cfg = get_guild("botconfig.json", 0)
+            cfg["support_avis_channel"] = inter.data["values"][0]
+            set_guild("botconfig.json", 0, cfg)
+            await parent.refresh(inter)
+        sel.callback = cb
+        v = discord.ui.View(timeout=60); v.add_item(sel)
+        await interaction.response.edit_message(view=v)
+
+    async def on_timeout(self):
+        try:
+            for item in self.children: item.disabled = True
+            if self.message: await self.message.edit(view=self)
+        except: pass
+
+# ── Commande suggestion ──────────────────────────────────────────
+@bot.command(name="suggest")
+async def suggest(ctx):
+    await ctx.message.delete() if ctx.message else None
+    await ctx.author.send(
+        "**Envoie ta suggestion ici** — décris ce que tu voudrais voir ajouté sur le bot.\n"
+        "*(type de commande, fonctionnalité, amélioration...)*"
+    ) if False else None
+    await interaction_suggest(ctx)
+
+async def interaction_suggest(ctx):
+    await ctx.send(
+        f"{ctx.author.mention} Clique sur le bouton ci-dessous pour envoyer ta suggestion !",
+        view=SuggestOpenView(ctx.author),
+        delete_after=30
+    )
+
+class SuggestOpenView(discord.ui.View):
+    def __init__(self, author):
+        super().__init__(timeout=60)
+        self.author = author
+
+    @discord.ui.button(label="📬 Envoyer une suggestion", style=discord.ButtonStyle.primary, emoji="📬")
+    async def open_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user != self.author:
+            return await interaction.response.send_message("Ce n'est pas ta commande.", ephemeral=True)
+        await interaction.response.send_modal(SuggestionModal())
+
+class SuggestionModal(discord.ui.Modal, title="Nouvelle suggestion"):
+    category = discord.ui.TextInput(
+        label="Catégorie",
+        placeholder="Commande / Modération / Interface / Autre",
+        max_length=50
+    )
+    suggestion = discord.ui.TextInput(
+        label="Ta suggestion",
+        style=discord.TextStyle.paragraph,
+        placeholder="Décris ta suggestion en détail...",
+        max_length=1000
+    )
+    raison = discord.ui.TextInput(
+        label="Pourquoi cette fonctionnalité ?",
+        style=discord.TextStyle.paragraph,
+        placeholder="En quoi ça améliorerait le bot ?",
+        max_length=500,
+        required=False
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        cfg    = get_guild("botconfig.json", 0)
+        cid    = cfg.get("support_suggestion_channel")
+        if not cid:
+            return await interaction.response.send_message("Le salon de suggestions n'est pas configuré.", ephemeral=True)
+        ch = interaction.guild.get_channel(int(cid)) if interaction.guild else None
+        if not ch:
+            # Cherche dans tous les serveurs
+            for guild in bot.guilds:
+                ch = guild.get_channel(int(cid))
+                if ch: break
+        if not ch:
+            return await interaction.response.send_message("Salon introuvable.", ephemeral=True)
+
+        e = discord.Embed(color=0x5865f2, timestamp=discord.utils.utcnow())
+        e.set_author(name=f"{interaction.user} — Suggestion", icon_url=interaction.user.display_avatar.url)
+        e.add_field(name="📂 Catégorie",   value=str(self.category),   inline=True)
+        e.add_field(name="👤 Par",          value=interaction.user.mention, inline=True)
+        e.add_field(name="💬 Suggestion",  value=str(self.suggestion), inline=False)
+        if str(self.raison).strip():
+            e.add_field(name="❓ Pourquoi", value=str(self.raison), inline=False)
+        e.set_footer(text=f"ID : {interaction.user.id}")
+        msg = await ch.send(embed=e, view=SuggestionVoteView())
+        await msg.add_reaction("✅")
+        await msg.add_reaction("❌")
+        await interaction.response.send_message("✅ Ta suggestion a été envoyée !", ephemeral=True)
+
+class SuggestionVoteView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="✅ Approuver", style=discord.ButtonStyle.success, custom_id="sugg_approve")
+    async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.administrator and interaction.user.id not in OWNER_IDS:
+            return await interaction.response.send_message("Réservé aux admins.", ephemeral=True)
+        e = interaction.message.embeds[0]
+        e.color = discord.Color.green()
+        e.set_footer(text=f"✅ Approuvée par {interaction.user}")
+        await interaction.message.edit(embed=e, view=None)
+        await interaction.response.send_message("Suggestion approuvée !", ephemeral=True)
+
+    @discord.ui.button(label="❌ Refuser", style=discord.ButtonStyle.danger, custom_id="sugg_refuse")
+    async def refuse(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.administrator and interaction.user.id not in OWNER_IDS:
+            return await interaction.response.send_message("Réservé aux admins.", ephemeral=True)
+        e = interaction.message.embeds[0]
+        e.color = discord.Color.red()
+        e.set_footer(text=f"❌ Refusée par {interaction.user}")
+        await interaction.message.edit(embed=e, view=None)
+        await interaction.response.send_message("Suggestion refusée.", ephemeral=True)
+
+    @discord.ui.button(label="🔧 En cours", style=discord.ButtonStyle.secondary, custom_id="sugg_wip")
+    async def wip(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.administrator and interaction.user.id not in OWNER_IDS:
+            return await interaction.response.send_message("Réservé aux admins.", ephemeral=True)
+        e = interaction.message.embeds[0]
+        e.color = discord.Color.orange()
+        e.set_footer(text=f"🔧 En cours — {interaction.user}")
+        await interaction.message.edit(embed=e, view=self)
+        await interaction.response.send_message("Marquée en cours !", ephemeral=True)
+
+# ── Commande avis ────────────────────────────────────────────────
+@bot.command(name="avis")
+async def avis(ctx):
+    try: await ctx.message.delete()
+    except: pass
+    await ctx.send(
+        f"{ctx.author.mention} Clique sur le bouton ci-dessous pour laisser ton avis !",
+        view=AvisOpenView(ctx.author),
+        delete_after=30
+    )
+
+class AvisOpenView(discord.ui.View):
+    def __init__(self, author):
+        super().__init__(timeout=60)
+        self.author = author
+
+    @discord.ui.button(label="⭐ Laisser un avis", style=discord.ButtonStyle.primary, emoji="⭐")
+    async def open_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user != self.author:
+            return await interaction.response.send_message("Ce n'est pas ta commande.", ephemeral=True)
+        await interaction.response.send_message(
+            "Choisis ta note :",
+            view=AvisNoteView(self.author),
+            ephemeral=True
+        )
+
+class AvisNoteView(discord.ui.View):
+    def __init__(self, author):
+        super().__init__(timeout=60)
+        self.author = author
+        # 10 boutons de note
+        notes = [
+            ("1 ⭐", 1, discord.ButtonStyle.danger),
+            ("2 ⭐", 2, discord.ButtonStyle.danger),
+            ("3 ⭐", 3, discord.ButtonStyle.danger),
+            ("4 ⭐", 4, discord.ButtonStyle.secondary),
+            ("5 ⭐", 5, discord.ButtonStyle.secondary),
+            ("6 ⭐", 6, discord.ButtonStyle.secondary),
+            ("7 ⭐", 7, discord.ButtonStyle.success),
+            ("8 ⭐", 8, discord.ButtonStyle.success),
+            ("9 ⭐", 9, discord.ButtonStyle.success),
+            ("10 ⭐",10, discord.ButtonStyle.success),
+        ]
+        for label, note, style in notes:
+            btn = discord.ui.Button(label=label, style=style, custom_id=f"note_{note}")
+            btn.callback = self._make_callback(note)
+            self.add_item(btn)
+
+    def _make_callback(self, note):
+        async def callback(interaction: discord.Interaction):
+            await interaction.response.send_modal(AvisModal(note))
+        return callback
+
+class AvisModal(discord.ui.Modal, title="Ton avis"):
+    raison = discord.ui.TextInput(
+        label="Ton avis / commentaire",
+        style=discord.TextStyle.paragraph,
+        placeholder="Partage ton expérience avec le bot...",
+        max_length=800
+    )
+    def __init__(self, note):
+        super().__init__()
+        self.note = note
+
+    async def on_submit(self, interaction: discord.Interaction):
+        cfg = get_guild("botconfig.json", 0)
+        cid = cfg.get("support_avis_channel")
+        if not cid:
+            return await interaction.response.send_message("Salon d'avis non configuré.", ephemeral=True)
+        ch = None
+        for guild in bot.guilds:
+            c = guild.get_channel(int(cid))
+            if c: ch = c; break
+        if not ch:
+            return await interaction.response.send_message("Salon introuvable.", ephemeral=True)
+
+        # Couleur selon note
+        if self.note <= 3:   color = 0xff0000
+        elif self.note <= 5: color = 0xff8c00
+        elif self.note <= 7: color = 0xffd700
+        else:                color = 0x00ff00
+
+        # Étoiles visuelles
+        stars_filled = "⭐" * self.note
+        stars_empty  = "✩" * (10 - self.note)
+        stars_bar    = f"{stars_filled}{stars_empty}"
+
+        e = discord.Embed(color=color, timestamp=discord.utils.utcnow())
+        e.set_author(name=f"{interaction.user} — Avis", icon_url=interaction.user.display_avatar.url)
+        e.set_thumbnail(url=interaction.user.display_avatar.url)
+        e.add_field(name="⭐ Note",      value=f"**{self.note}/10**\n{stars_bar}", inline=True)
+        e.add_field(name="👤 Membre",    value=interaction.user.mention, inline=True)
+        e.add_field(name="💬 Commentaire", value=str(self.raison), inline=False)
+        e.set_footer(text=f"ID : {interaction.user.id}")
+        await ch.send(embed=e)
+        await interaction.response.send_message(f"✅ Merci pour ton avis **{self.note}/10** !", ephemeral=True)
+
+
 bot.run(TOKEN)
